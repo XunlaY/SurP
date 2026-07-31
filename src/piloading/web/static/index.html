@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>piLoading – PV-Überschussladen</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --card-bg: #1a2233;
+    --border: #2a3550;
+    --text: #e6ebf5;
+    --text-dim: #8b96ad;
+    --green: #4caf7d;
+    --red: #e0654f;
+    --amber: #d9a441;
+    --blue: #5b8def;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 1.5rem;
+  }
+  h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 1rem; }
+  #banner {
+    display: none;
+    background: var(--amber);
+    color: #1a1300;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-weight: 600;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+  }
+  .card .label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+  .card .value { font-size: 1.4rem; font-weight: 600; margin-top: 0.2rem; }
+  .card .sub { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.15rem; }
+  .green { color: var(--green); }
+  .red { color: var(--red); }
+  .blue { color: var(--blue); }
+  #reason {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+  }
+  #chart-wrap {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+  }
+  #chart-wrap .legend { font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem; }
+  .legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.3rem; }
+  canvas { width: 100%; height: 260px; display: block; }
+  footer { margin-top: 1rem; font-size: 0.75rem; color: var(--text-dim); }
+</style>
+</head>
+<body>
+  <h1>piLoading – PV-Überschussladen</h1>
+  <div id="banner"></div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Netz</div>
+      <div class="value" id="grid-power">–</div>
+      <div class="sub">positiv = Bezug, negativ = Überschuss</div>
+    </div>
+    <div class="card">
+      <div class="label">PV-Leistung</div>
+      <div class="value" id="pv-power">–</div>
+    </div>
+    <div class="card">
+      <div class="label">Batterie</div>
+      <div class="value" id="battery-soc">–</div>
+      <div class="sub" id="battery-power"></div>
+    </div>
+    <div class="card">
+      <div class="label">Wallbox</div>
+      <div class="value" id="wallbox-power">–</div>
+      <div class="sub" id="wallbox-detail"></div>
+    </div>
+  </div>
+
+  <div id="reason">
+    <div class="label" style="color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase;">Entscheidung</div>
+    <div id="reason-text">–</div>
+  </div>
+
+  <div id="chart-wrap">
+    <div class="legend">
+      <span class="swatch" style="background: var(--blue);"></span>Netz (W)
+      <span class="swatch" style="background: var(--green);"></span>Wallbox (W)
+      &nbsp;·&nbsp;letzte 24h
+    </div>
+    <canvas id="chart" width="1000" height="260"></canvas>
+  </div>
+
+  <footer id="updated">–</footer>
+
+<script>
+const fmtW = (w) => w === null || w === undefined ? "–" : Math.round(w).toLocaleString("de-DE") + " W";
+const fmtA = (a) => a === null || a === undefined ? "–" : a.toFixed(1) + " %";
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  return res.json();
+}
+
+function setText(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = el.className.replace(/\b(green|red|blue)\b/g, "").trim();
+  if (cls) el.classList.add(cls);
+}
+
+async function refreshStatus() {
+  let s;
+  try {
+    s = await fetchJSON("/api/status");
+  } catch (e) {
+    setText("reason-text", "Verbindung zum Server verloren …");
+    return;
+  }
+
+  const banner = document.getElementById("banner");
+  if (s.stale) {
+    banner.style.display = "block";
+    banner.textContent = "Achtung: Messwerte sind veraltet.";
+  } else {
+    banner.style.display = "none";
+  }
+
+  if (s.grid) {
+    const gp = s.grid.grid_power_w;
+    setText("grid-power", fmtW(gp), gp > 0 ? "red" : "green");
+    setText("pv-power", fmtW(s.grid.pv_power_w));
+    if (s.grid.battery_soc_pct !== null && s.grid.battery_soc_pct !== undefined) {
+      setText("battery-soc", fmtA(s.grid.battery_soc_pct));
+      setText("battery-power", fmtW(s.grid.battery_power_w));
+    }
+  }
+
+  if (s.wallbox) {
+    setText("wallbox-power", fmtW(s.wallbox.power_w), s.wallbox.charging ? "green" : null);
+    const detail = `${s.wallbox.phases}-phasig · ${s.wallbox.amps_effective} A · ${s.wallbox.car_state}`;
+    setText("wallbox-detail", s.wallbox.error ? `${detail} · Fehler: ${s.wallbox.error}` : detail);
+  }
+
+  if (s.decision) {
+    setText("reason-text", s.decision.reason);
+  }
+
+  setText("updated", s.updated_at ? "Stand: " + new Date(s.updated_at).toLocaleTimeString("de-DE") : "–");
+}
+
+function drawChart(canvas, samples) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (samples.length < 2) return;
+
+  const values = samples.flatMap(s => [s.grid_power_w ?? 0, s.wallbox_power_w ?? 0]);
+  const minV = Math.min(0, ...values), maxV = Math.max(0, ...values);
+  const range = maxV - minV || 1;
+  const t0 = samples[0].ts, t1 = samples[samples.length - 1].ts;
+  const tRange = (t1 - t0) || 1;
+
+  const x = (ts) => ((ts - t0) / tRange) * (w - 20) + 10;
+  const y = (v) => h - 10 - ((v - minV) / range) * (h - 20);
+
+  // zero line
+  ctx.strokeStyle = "#2a3550";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, y(0));
+  ctx.lineTo(w, y(0));
+  ctx.stroke();
+
+  const drawSeries = (key, color) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    samples.forEach((s, i) => {
+      const v = s[key] ?? 0;
+      i === 0 ? ctx.moveTo(x(s.ts), y(v)) : ctx.lineTo(x(s.ts), y(v));
+    });
+    ctx.stroke();
+  };
+
+  drawSeries("grid_power_w", "#5b8def");
+  drawSeries("wallbox_power_w", "#4caf7d");
+}
+
+async function refreshHistory() {
+  let rows;
+  try {
+    rows = await fetchJSON("/api/history?hours=24");
+  } catch (e) {
+    return;
+  }
+  drawChart(document.getElementById("chart"), rows);
+}
+
+refreshStatus();
+refreshHistory();
+setInterval(refreshStatus, 5000);
+setInterval(refreshHistory, 60000);
+</script>
+</body>
+</html>
