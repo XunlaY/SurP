@@ -1,0 +1,26 @@
+# Systemd unit for the Raspberry Pi. Adjust User/WorkingDirectory/ExecStart to match
+# your actual install location, then:
+#   sudo cp deploy/piloading.service /etc/systemd/system/
+#   sudo cp .env /etc/piloading.env          # PILOADING_MODE=live, PILOADING_DRY_RUN=false
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now piloading
+#   journalctl -u piloading -f
+
+[Unit]
+Description=piLoading - PV-Ueberschussladen controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/piloading
+EnvironmentFile=/etc/piloading.env
+ExecStart=/opt/piloading/.venv/bin/piloading run
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
