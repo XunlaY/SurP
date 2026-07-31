@@ -46,6 +46,20 @@ async def test_read_status_parses_realistic_response():
 
 
 @respx.mock
+async def test_read_status_parses_pha_as_bool_array():
+    # Some go-e firmwares send pha as [phase3_before, phase2_before, phase1_before,
+    # phase3_after, phase2_after, phase1_after] instead of the documented bitmask int.
+    respx.get(f"http://{HOST}/api/status").mock(
+        return_value=httpx.Response(200, json=_status_json(pha=[False, False, False, True, True, True]))
+    )
+    client = GoeWallboxClient(HOST)
+
+    status = await client.read_status()
+
+    assert status.phases == 3
+
+
+@respx.mock
 async def test_read_status_maps_known_error_code_and_zeroes_amps_when_idle():
     respx.get(f"http://{HOST}/api/status").mock(
         return_value=httpx.Response(200, json=_status_json(car="1", err="1"))

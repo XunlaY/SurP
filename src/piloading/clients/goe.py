@@ -69,9 +69,16 @@ class GoeWallboxClient:
         power_w = nrg[11] * 10.0  # nrg[11] is total power in 0.01kW units
         amps_effective = round(max(nrg[4:7]) / 10.0) if charging else 0  # nrg[4:7] is per-phase current in 0.1A
 
-        pha = int(data.get("pha", 0))
-        phases_after_contactor = pha & 0b111  # low 3 bits = phase 1/2/3 state *after* the contactor
-        phases = bin(phases_after_contactor).count("1") or 1
+        pha_raw = data.get("pha", 0)
+        if isinstance(pha_raw, list):
+            # Some go-e firmwares send pha as a 6-element bool array instead of the
+            # documented bitmask int: [phase3_before, phase2_before, phase1_before,
+            # phase3_after, phase2_after, phase1_after] — same bit order as the
+            # 0b00ABCDEF bitmask, confirmed empirically against a live device.
+            phases_after_contactor = sum(1 for p in pha_raw[3:6] if p)
+        else:
+            phases_after_contactor = bin(int(pha_raw) & 0b111).count("1")
+        phases = phases_after_contactor or 1
 
         err_raw = int(data.get("err", 0))
         error = _ERROR_MESSAGES.get(err_raw, f"Unbekannter Fehlercode {err_raw}") if err_raw else None
