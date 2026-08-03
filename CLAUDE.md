@@ -61,9 +61,14 @@ passing.
 - **go-e `psm` (phase switching) is unofficial**, reverse-engineered by the community rather
   than documented by go-e. It's written only on an actual phase-count transition, not every
   cycle, to avoid spamming a key that drives a physical contactor.
-- **go-e current writes use `amx`**, which reverts automatically on device reboot but has no
-  timed watchdog — unlike some other go-e API versions' temporary-current keys. Don't assume a
-  10-minute auto-revert exists.
+- **go-e writes use `amp`/`frc`, not `amx`/`alw`.** Confirmed against real hardware: `amx`
+  doesn't exist on this firmware (500) and `alw` is read-only (500) even with the "API v1"
+  toggle enabled — the device only implements the v2-native write keys. `amp` sets current,
+  `frc` enables/disables (Off=1/On=2; Neutral=0 is never used, since that hands control back to
+  the charger's own logic). Unlike the old `amx` assumption (RAM-only), `amp`/`frc` are
+  flash-backed and rated for ~100k writes, so `set_charging` in
+  [goe.py](src/piloading/clients/goe.py) only sends a key when its value actually changed since
+  the last call — the same guard already used for `psm`.
 
 ## Testing
 

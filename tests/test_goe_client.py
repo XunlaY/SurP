@@ -17,7 +17,6 @@ def _status_json(**overrides):
         "car": "2",
         "alw": "1",
         "amp": "16",
-        "amx": "16",
         "ama": "32",
         "err": "0",
         "pha": "63",  # 0b00111111: all 3 phases before AND after the contactor
@@ -75,15 +74,15 @@ async def test_read_status_maps_known_error_code_and_zeroes_amps_when_idle():
 
 
 @respx.mock
-async def test_set_charging_sends_amx_alw_and_psm_on_first_call():
+async def test_set_charging_sends_amp_frc_and_psm_on_first_call():
     route = respx.get(f"http://{HOST}/api/set").mock(return_value=httpx.Response(200, json={}))
     client = GoeWallboxClient(HOST)
 
     await client.set_charging(enabled=True, amps=10, phases=3)
 
     request = route.calls.last.request
-    assert request.url.params["amx"] == "10"
-    assert request.url.params["alw"] == "1"
+    assert request.url.params["amp"] == "10"
+    assert request.url.params["frc"] == "2"  # forceState On
     assert request.url.params["psm"] == "2"  # community-reported value for 3-phase
 
 
@@ -96,9 +95,34 @@ async def test_set_charging_omits_psm_when_phase_unchanged_but_resends_on_switch
     await client.set_charging(enabled=True, amps=12, phases=3)
 
     unchanged_request = route.calls.last.request
-    assert unchanged_request.url.params["amx"] == "12"
+    assert unchanged_request.url.params["amp"] == "12"
+    assert "frc" not in unchanged_request.url.params  # enabled didn't change
     assert "psm" not in unchanged_request.url.params
 
     await client.set_charging(enabled=True, amps=12, phases=1)
     switched_request = route.calls.last.request
     assert switched_request.url.params["psm"] == "1"  # community-reported value for 1-phase
+
+
+@respx.mock
+async def test_set_charging_skips_request_entirely_when_nothing_changed():
+    route = respx.get(f"http://{HOST}/api/set").mock(return_value=httpx.Response(200, json={}))
+    client = GoeWallboxClient(HOST)
+
+    await client.set_charging(enabled=True, amps=10, phases=3)
+    assert route.call_count == 1
+
+    # Identical target on the next control cycle must not hit the flash-backed keys again.
+    await client.set_charging(enabled=True, amps=10, phases=3)
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_set_charging_maps_disabled_to_frc_off():
+    route = respx.get(f"http://{HOST}/api/set").mock(return_value=httpx.Response(200, json={}))
+    client = GoeWallboxClient(HOST)
+
+    await client.set_charging(enabled=False, amps=6, phases=1)
+
+    request = route.calls.last.request
+    assert request.url.params["frc"] == "1"  # forceState Off
