@@ -20,7 +20,7 @@ def _status_json(**overrides):
         "ama": "32",
         "err": "0",
         "pha": "63",  # 0b00111111: all 3 phases before AND after the contactor
-        "nrg": [230, 231, 229, 0, 160, 160, 160, 36, 37, 36, 0, 1104, 98, 98, 98, 0],
+        "nrg": [230, 231, 229, 0, 160, 160, 160, 36, 37, 36, 0, 11040, 98, 98, 98, 0],
         "dws": "12345",
         "eto": "500",
     }
@@ -37,7 +37,7 @@ async def test_read_status_parses_realistic_response():
 
     assert status.car_state is CarState.CHARGING
     assert status.charging is True
-    assert status.power_w == pytest.approx(11040.0)  # nrg[11]=1104 * 10 (0.01kW units)
+    assert status.power_w == pytest.approx(11040.0)  # nrg[11] is plain Watts on this firmware
     assert status.amps_effective == 16  # max(nrg[4:7]) / 10
     assert status.phases == 3  # pha=63 -> 3 bits set after the contactor
     assert status.energy_session_wh == pytest.approx(34.2917, rel=1e-3)  # dws=12345 * 10 / 3600

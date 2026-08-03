@@ -26,6 +26,10 @@ names that turned out not to exist on this firmware at all):
     `pha` read-back (officially documented) is what actually confirms whether a
     switch took effect, so `read_status()` always derives `phases` from `pha`,
     never from what we last requested.
+  - `nrg[11]` (total power) does NOT follow the documented 0.01kW scale on this
+    firmware — it's plain Watts. Confirmed against a live device: the go-e's own
+    display read 3.5879kW while the documented `*10.0` conversion produced
+    35879 W, a 10x error. `read_status()` therefore uses `nrg[11]` as-is.
 """
 
 from __future__ import annotations
@@ -83,7 +87,10 @@ class GoeWallboxClient:
         charging = car_state is CarState.CHARGING
 
         nrg = data.get("nrg") or [0] * 16
-        power_w = nrg[11] * 10.0  # nrg[11] is total power in 0.01kW units
+        # nrg[11] is documented (go-eCharger-API-v1) as total power in 0.01kW units, but on
+        # this firmware it's confirmed (against a live device: reported 3.5879kW while the old
+        # *10.0 conversion displayed 35879 W, a 10x error) to already be plain Watts.
+        power_w = float(nrg[11])
         amps_effective = round(max(nrg[4:7]) / 10.0) if charging else 0  # nrg[4:7] is per-phase current in 0.1A
 
         pha_raw = data.get("pha", 0)

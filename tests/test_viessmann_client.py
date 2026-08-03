@@ -78,6 +78,33 @@ async def test_read_parses_grid_pv_battery_and_refreshes_token_first(tmp_path):
 
 
 @respx.mock
+async def test_pv_prefix_match_skips_statistic_suffix_and_missing_value(tmp_path):
+    # "photovoltaic.production.current.day" matches the PV prefix textually but is a
+    # cumulative kWh-for-today statistic, not instantaneous power — it must be skipped in
+    # favor of the real instantaneous feature later in the list, even though that one comes
+    # second and even though an earlier prefix match without a usable value sits in between.
+    _mock_token_refresh()
+    respx.get(FEATURES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    _feature("pcc.transfer.power.exchange", 450.0),
+                    _feature("photovoltaic.production.current.day", 0.007),
+                    {"feature": "photovoltaic.production.current.raw", "properties": {"status": "connected"}},
+                    _feature("photovoltaic.production.current", 3200.0),
+                ]
+            },
+        )
+    )
+    client = ViessmannClient(_auth_file(tmp_path))
+
+    reading = await client.read()
+
+    assert reading.pv_power_w == pytest.approx(3200.0)
+
+
+@respx.mock
 async def test_invert_grid_power_sign_flips_sign(tmp_path):
     _mock_token_refresh()
     respx.get(FEATURES_URL).mock(

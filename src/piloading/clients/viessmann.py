@@ -40,6 +40,10 @@ _GRID_FEATURE = "pcc.transfer.power.exchange"
 _PV_FEATURE_PREFIXES = ("photovoltaic.production.current", "photovoltaic.power")
 _BATTERY_POWER_PREFIXES = ("ess.power",)
 _BATTERY_SOC_PREFIXES = ("ess.stateOfCharge",)
+# Viessmann exposes cumulative energy statistics (in kWh, not instantaneous W) as siblings
+# under the same prefix, e.g. "photovoltaic.production.current.day" next to the actual
+# instantaneous reading — exclude them so prefix matching can't silently pick one up.
+_STATISTIC_SUFFIXES = (".day", ".week", ".month", ".year", ".total")
 
 
 class ViessmannAuthError(RuntimeError):
@@ -107,11 +111,13 @@ class ViessmannClient:
     def _find_value(features: list[dict[str, Any]], *, exact: str | None = None, prefixes: tuple[str, ...] = ()) -> float | None:
         for feature in features:
             name = feature.get("feature", "")
-            if name == exact or (prefixes and name.startswith(prefixes)):
+            is_prefix_match = prefixes and name.startswith(prefixes) and not name.endswith(_STATISTIC_SUFFIXES)
+            if name == exact or is_prefix_match:
                 value = feature.get("properties", {}).get("value", {}).get("value")
                 if value is None:
                     logger.warning("Feature '%s' gefunden, aber keine properties.value.value: %r", name, feature)
-                    return None
+                    continue
+                logger.debug("Verwende Viessmann-Feature '%s' (exact=%r, prefixes=%r)", name, exact, prefixes)
                 return float(value)
         return None
 
