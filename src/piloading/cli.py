@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import signal
 from collections.abc import Awaitable, Callable
 
 import uvicorn
@@ -63,16 +64,27 @@ async def _run_async(settings: Settings) -> None:
     control_task = asyncio.create_task(run_control_loop(settings, battery_client, wallbox_client, history, state))
     server_task = asyncio.create_task(server.serve())
 
+    # SIGTERM (systemd stop/restart) otherwise kills the process immediately, skipping the
+    # cleanup below — route it through the same graceful-shutdown path as KeyboardInterrupt.
+    stop_event = asyncio.Event()
+    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, stop_event.set)
+    stop_task = asyncio.create_task(stop_event.wait())
+
     try:
-        done, pending = await asyncio.wait({control_task, server_task}, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(
+            {control_task, server_task, stop_task}, return_when=asyncio.FIRST_COMPLETED
+        )
         for task in pending:
             task.cancel()
         for task in done:
             task.result()  # re-raise if this task ended due to an exception
+        if stop_task in done:
+            logger.info("SIGTERM empfangen, fahre piLoading sauber herunter ...")
     finally:
         control_task.cancel()
         server_task.cancel()
-        await asyncio.gather(control_task, server_task, return_exceptions=True)
+        stop_task.cancel()
+        await asyncio.gather(control_task, server_task, stop_task, return_exceptions=True)
         for closer in closers:
             await closer()
         history.close()

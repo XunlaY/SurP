@@ -102,6 +102,8 @@ class GoeWallboxClient:
             phases_after_contactor = sum(1 for p in pha_raw[3:6] if p)
         else:
             phases_after_contactor = bin(int(pha_raw) & 0b111).count("1")
+        if phases_after_contactor == 0 and charging:
+            logger.warning("go-e meldet 0 aktive Phasen (pha) trotz car=CHARGING, nehme 1-phasig an")
         phases = phases_after_contactor or 1
 
         err_raw = int(data.get("err", 0))
