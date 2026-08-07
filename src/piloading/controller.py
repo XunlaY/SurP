@@ -35,6 +35,7 @@ class SurplusController:
         self._phase_crossing_since: datetime | None = None
         self._phase_crossing_wants: int | None = None
         self._last_phase_switch: datetime | None = None
+        self._last_amp_change: datetime | None = None
 
     def decide(self, grid: GridReading, wallbox: WallboxStatus, now: datetime) -> ControlDecision:
         s = self._settings
@@ -55,7 +56,13 @@ class SurplusController:
                 self._charging = True
             if self._charging:
                 raw_amps = target_power / (s.voltage * self._phases)
-                self._last_amps = max(s.min_amp, min(s.max_amp, round(raw_amps)))
+                new_amps = max(s.min_amp, min(s.max_amp, round(raw_amps)))
+                cooled_down = self._last_amp_change is None or (
+                    now - self._last_amp_change >= timedelta(seconds=s.amp_change_cooldown_s)
+                )
+                if new_amps != self._last_amps and cooled_down:
+                    self._last_amps = new_amps
+                    self._last_amp_change = now
             reason = (
                 f"Überschuss reicht ({target_power:.0f} W) – lade {self._phases}-phasig mit {self._last_amps} A"
                 if self._charging

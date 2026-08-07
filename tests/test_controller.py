@@ -125,6 +125,25 @@ def test_phase_switch_requires_sustain_and_respects_min_interval(base_time):
     assert d5.target_phases == 1
 
 
+def test_amp_changes_respect_cooldown(base_time):
+    settings = make_settings(start_delay_s=0.0, amp_change_cooldown_s=30.0, min_amp=6, max_amp=16, voltage=230.0)
+    controller = SurplusController(settings)
+    wb = wallbox(base_time, charging=False)
+
+    t0 = base_time
+    d0 = controller.decide(grid(-2000, t0), wb, t0)  # wants ~9A
+    assert d0.enable_charging is True
+    assert d0.target_amps == 9
+
+    t1 = t0 + timedelta(seconds=10)
+    d1 = controller.decide(grid(-4000, t1), wb, t1)  # wants ~17A -> clamped to 16A
+    assert d1.target_amps == 9  # still cooling down from the change at t0
+
+    t2 = t0 + timedelta(seconds=30)
+    d2 = controller.decide(grid(-4000, t2), wb, t2)
+    assert d2.target_amps == 16  # cooldown elapsed
+
+
 def test_amps_are_clamped_to_min_and_max(base_time):
     settings = make_settings(
         start_delay_s=0.0, min_amp=6, max_amp=16, voltage=230.0, enable_phase_switching=False

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     stop_delay_s: float = 90.0
     phase_switch_sustain_s: float = 300.0
     phase_switch_min_interval_s: float = 600.0
+    amp_change_cooldown_s: float = 15.0
     control_interval_s: float = 10.0
 
     # Storage / web dashboard
