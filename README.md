@@ -111,5 +111,8 @@ pytest
   Start im Live-Modus wird einmalig die komplette Liste der gefundenen Features geloggt;
   falls PV/Batterie im Dashboard leer bleiben, dort nach den tatsächlichen Namen suchen und
   `clients/viessmann.py` entsprechend anpassen.
-- Rate-Limits der Viessmann-API sind nicht exakt bekannt; der Standard-Poll-Intervall von
-  60s ist bewusst konservativ gewählt.
+- Rate-Limits der Viessmann-API sind nicht exakt bekannt. Solange ein Auto angeschlossen
+  ist, wird sie einmal pro `PILOADING_CONTROL_INTERVAL_S` (Standard 10s) abgefragt; ist
+  kein Auto angeschlossen oder der Ladevorgang bereits abgeschlossen, pausiert die
+  Viessmann-Abfrage komplett und nur go-e wird noch (langsamer, alle
+  `PILOADING_GOE_POLL_INTERVAL_S`, Standard 60s) auf ein neu angestecktes Auto abgefragt.

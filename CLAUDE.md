@@ -61,6 +61,18 @@ passing.
 - **go-e `psm` (phase switching) is unofficial**, reverse-engineered by the community rather
   than documented by go-e. It's written only on an actual phase-count transition, not every
   cycle, to avoid spamming a key that drives a physical contactor.
+- **Viessmann polling pauses when no car is connected.** `run_control_loop` reads go-e's
+  `car_state` first, every cycle; while it's `IDLE` or `COMPLETE` (no car / charge
+  finished), the loop skips `battery_client.read()` entirely, calls
+  `SurplusController.reset_session()`, and sleeps `goe_poll_interval_s` (default 60s)
+  instead of `control_interval_s` — so go-e is still polled to notice a car showing up
+  again, but Viessmann isn't hit while there's nothing to control. `reset_session()`
+  clears the surplus/deficit/phase-crossing timestamps and the grid-power smoothing
+  history, but deliberately leaves `_phases`/`_last_amps`/cooldown timestamps alone
+  (physical wallbox/contactor state, not session state) — without this reset, a car
+  plugged back in after a long idle stretch would see an already-elapsed
+  `start_delay_s`/`stop_delay_s` from the stale timestamp and skip the delay instead of
+  actually waiting it out.
 - **go-e writes use `amp`/`frc`, not `amx`/`alw`.** Confirmed against real hardware: `amx`
   doesn't exist on this firmware (500) and `alw` is read-only (500) even with the "API v1"
   toggle enabled — the device only implements the v2-native write keys. `amp` sets current,

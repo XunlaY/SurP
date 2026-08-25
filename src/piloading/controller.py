@@ -13,7 +13,13 @@ from datetime import datetime, timedelta
 from piloading.clients.base import BatterySystemClient, WallboxClient
 from piloading.config import Settings
 from piloading.history import HistoryStore
-from piloading.models import ControlDecision, GridReading, WallboxStatus
+from piloading.models import CarState, ControlDecision, GridReading, WallboxStatus
+
+# car_state values for which no charging session can be in progress: nothing for the
+# controller to decide, so the control loop skips the Viessmann read entirely and only
+# keeps polling go-e (at the slower goe_poll_interval_s) to notice a car being plugged
+# back in or a new session starting.
+_NO_SESSION_STATES = (CarState.IDLE, CarState.COMPLETE)
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +132,23 @@ class SurplusController:
     def _elapsed(since: datetime | None, now: datetime) -> float:
         return 0.0 if since is None else (now - since).total_seconds()
 
+    def reset_session(self) -> None:
+        """Clear per-session hysteresis state. Called by the control loop whenever no
+        car is connected or a charge just finished, so that pausing decide() calls
+        during that idle period doesn't leave a stale `_surplus_since`/`_deficit_since`
+        timestamp around — without this, the next session would see an already-elapsed
+        start_delay_s/stop_delay_s the moment a car is plugged back in, instead of
+        actually waiting out the delay. `_phases`, `_last_amps`, and the phase-switch/
+        amp-change cooldown timestamps are deliberately left untouched: they describe
+        the physical wallbox/contactor state, not a specific charging session.
+        """
+        self._grid_history.clear()
+        self._charging = False
+        self._surplus_since = None
+        self._deficit_since = None
+        self._phase_crossing_since = None
+        self._phase_crossing_wants = None
+
 
 @dataclass
 class LatestState:
@@ -155,18 +178,49 @@ async def run_control_loop(
         now = datetime.now()
 
         try:
-            last_grid = await battery_client.read()
-            last_successful_read_at = now
-        except Exception:
-            logger.exception("Battery-Systemabfrage fehlgeschlagen, verwende letzten bekannten Wert")
-        grid = last_grid
-
-        try:
             wallbox = await wallbox_client.read_status()
         except Exception:
             logger.exception("Wallbox-Abfrage fehlgeschlagen, überspringe diesen Zyklus")
             await asyncio.sleep(settings.control_interval_s)
             continue
+
+        if wallbox.car_state in _NO_SESSION_STATES:
+            # No car connected, or the car finished charging: nothing to control, and no
+            # point spending a Viessmann API call on it. Reset the controller's session
+            # timers so the next real session starts start_delay_s/stop_delay_s clean
+            # (see reset_session docstring), then just keep polling go-e — at the slower
+            # goe_poll_interval_s — until a car shows up again.
+            controller.reset_session()
+            decision = ControlDecision(
+                enable_charging=False,
+                target_amps=last_applied.target_amps if last_applied else settings.min_amp,
+                target_phases=last_applied.target_phases if last_applied else 1,
+                reason="Kein Auto angeschlossen oder Ladevorgang abgeschlossen – Viessmann-Abfrage pausiert",
+            )
+            if not settings.dry_run:
+                try:
+                    await wallbox_client.set_charging(
+                        enabled=False, amps=decision.target_amps, phases=decision.target_phases
+                    )
+                except Exception:
+                    logger.exception("Konnte Ladeentscheidung nicht an die Wallbox übertragen")
+
+            state.grid = last_grid
+            state.wallbox = wallbox
+            state.decision = decision
+            state.stale = False
+            state.updated_at = now
+            last_applied = decision
+
+            await asyncio.sleep(settings.goe_poll_interval_s)
+            continue
+
+        try:
+            last_grid = await battery_client.read()
+            last_successful_read_at = now
+        except Exception:
+            logger.exception("Battery-Systemabfrage fehlgeschlagen, verwende letzten bekannten Wert")
+        grid = last_grid
 
         stale = False
         if grid is None:
