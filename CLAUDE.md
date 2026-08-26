@@ -61,18 +61,27 @@ passing.
 - **go-e `psm` (phase switching) is unofficial**, reverse-engineered by the community rather
   than documented by go-e. It's written only on an actual phase-count transition, not every
   cycle, to avoid spamming a key that drives a physical contactor.
-- **Viessmann polling pauses when no car is connected.** `run_control_loop` reads go-e's
-  `car_state` first, every cycle; while it's `IDLE` or `COMPLETE` (no car / charge
-  finished), the loop skips `battery_client.read()` entirely, calls
-  `SurplusController.reset_session()`, and sleeps `goe_poll_interval_s` (default 60s)
-  instead of `control_interval_s` — so go-e is still polled to notice a car showing up
-  again, but Viessmann isn't hit while there's nothing to control. `reset_session()`
-  clears the surplus/deficit/phase-crossing timestamps and the grid-power smoothing
-  history, but deliberately leaves `_phases`/`_last_amps`/cooldown timestamps alone
-  (physical wallbox/contactor state, not session state) — without this reset, a car
-  plugged back in after a long idle stretch would see an already-elapsed
-  `start_delay_s`/`stop_delay_s` from the stale timestamp and skip the delay instead of
-  actually waiting it out.
+- **Viessmann polling pauses when no car is connected — but `COMPLETE` is ambiguous.**
+  `run_control_loop` reads go-e's `car_state` first, every cycle. `IDLE` always means no
+  session. `COMPLETE` ("charge finished, car still connected") does *not* reliably mean
+  the car is full: go-e reports the exact same `car=4` when *we* are the ones who last
+  disabled charging (deficit hysteresis, or a stale-data stop) — confirmed against real
+  hardware, sending `frc=Off` flips `car` from `WAIT_CAR`/`CHARGING` straight to
+  `COMPLETE`. So the loop tracks a local `charging_stopped_by_us` flag (set from the final
+  `decision.enable_charging` each normal cycle) and only treats `COMPLETE` as a real
+  no-session state when that flag is `False` — i.e. the car stopped itself, not us. When
+  `COMPLETE` follows our own stop, the loop keeps polling Viessmann at the normal
+  `control_interval_s` instead of pausing, so surplus reappearing can still resume
+  charging without needing an unplug/replug. Only in the genuine no-session case does the
+  loop skip `battery_client.read()`, call `SurplusController.reset_session()`, and sleep
+  `goe_poll_interval_s` (default 60s) instead of `control_interval_s` — go-e is still
+  polled to notice a car showing up again, but Viessmann isn't hit while there's truly
+  nothing to control. `reset_session()` clears the surplus/deficit/phase-crossing
+  timestamps and the grid-power smoothing history, but deliberately leaves
+  `_phases`/`_last_amps`/cooldown timestamps alone (physical wallbox/contactor state, not
+  session state) — without this reset, a car plugged back in after a long idle stretch
+  would see an already-elapsed `start_delay_s`/`stop_delay_s` from the stale timestamp and
+  skip the delay instead of actually waiting it out.
 - **go-e writes use `amp`/`frc`, not `amx`/`alw`.** Confirmed against real hardware: `amx`
   doesn't exist on this firmware (500) and `alw` is read-only (500) even with the "API v1"
   toggle enabled — the device only implements the v2-native write keys. `amp` sets current,

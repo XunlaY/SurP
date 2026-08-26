@@ -15,12 +15,6 @@ from piloading.config import Settings
 from piloading.history import HistoryStore
 from piloading.models import CarState, ControlDecision, GridReading, WallboxStatus
 
-# car_state values for which no charging session can be in progress: nothing for the
-# controller to decide, so the control loop skips the Viessmann read entirely and only
-# keeps polling go-e (at the slower goe_poll_interval_s) to notice a car being plugged
-# back in or a new session starting.
-_NO_SESSION_STATES = (CarState.IDLE, CarState.COMPLETE)
-
 logger = logging.getLogger(__name__)
 
 
@@ -173,6 +167,11 @@ async def run_control_loop(
     last_grid: GridReading | None = None
     last_applied: ControlDecision | None = None
     last_successful_read_at: datetime | None = None
+    # Tracks whether *we* were the ones who last told go-e to stop charging (hysteresis
+    # deficit stop, or a stale-data stop below), as opposed to the car stopping itself.
+    # go-e reports car_state=COMPLETE in both cases — indistinguishably — so without this
+    # we can't tell a real "car is full" from "we just paused it, surplus may come back".
+    charging_stopped_by_us = False
 
     while True:
         now = datetime.now()
@@ -184,18 +183,31 @@ async def run_control_loop(
             await asyncio.sleep(settings.control_interval_s)
             continue
 
-        if wallbox.car_state in _NO_SESSION_STATES:
-            # No car connected, or the car finished charging: nothing to control, and no
-            # point spending a Viessmann API call on it. Reset the controller's session
-            # timers so the next real session starts start_delay_s/stop_delay_s clean
-            # (see reset_session docstring), then just keep polling go-e — at the slower
-            # goe_poll_interval_s — until a car shows up again.
+        # No car connected always means no session. COMPLETE only means no session when
+        # the car stopped itself — if *we* were the last ones to disable charging (deficit
+        # hysteresis or a stale-data stop), go-e still reports COMPLETE, but surplus may
+        # still return, so we must keep polling Viessmann instead of pausing forever.
+        no_session = wallbox.car_state is CarState.IDLE or (
+            wallbox.car_state is CarState.COMPLETE and not charging_stopped_by_us
+        )
+        if no_session:
+            # Nothing to control, and no point spending a Viessmann API call on it. Reset
+            # the controller's session timers so the next real session starts
+            # start_delay_s/stop_delay_s clean (see reset_session docstring), then just
+            # keep polling go-e — at the slower goe_poll_interval_s — until a car shows up
+            # again.
             controller.reset_session()
+            charging_stopped_by_us = False
+            reason = (
+                "Kein Auto angeschlossen – Viessmann-Abfrage pausiert"
+                if wallbox.car_state is CarState.IDLE
+                else "Ladevorgang vom Auto beendet (Fahrzeug bleibt angeschlossen) – Viessmann-Abfrage pausiert"
+            )
             decision = ControlDecision(
                 enable_charging=False,
                 target_amps=last_applied.target_amps if last_applied else settings.min_amp,
                 target_phases=last_applied.target_phases if last_applied else 1,
-                reason="Kein Auto angeschlossen oder Ladevorgang abgeschlossen – Viessmann-Abfrage pausiert",
+                reason=reason,
             )
             if not settings.dry_run:
                 try:
@@ -263,6 +275,7 @@ async def run_control_loop(
                 )
             except Exception:
                 logger.exception("Konnte Ladeentscheidung nicht an die Wallbox übertragen")
+        charging_stopped_by_us = not decision.enable_charging
 
         if grid is not None:
             history.insert_sample(now, grid, wallbox, decision)

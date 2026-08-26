@@ -265,3 +265,57 @@ async def test_run_control_loop_resumes_battery_polling_once_car_connects(tmp_pa
     history.close()
 
     assert battery_client.read_count > 0
+
+
+async def test_run_control_loop_skips_viessmann_on_genuine_completion(tmp_path):
+    """car_state=COMPLETE with no prior control from us (e.g. the car was already
+    finished when piLoading started) is a real "car is full" — Viessmann polling
+    should pause, same as CarState.IDLE."""
+    settings = make_settings(control_interval_s=0.01, goe_poll_interval_s=0.01)
+    wallbox_client = _FakeWallbox([CarState.COMPLETE])
+    battery_client = _FakeBattery()
+    history = HistoryStore(tmp_path / "history.db")
+    state = LatestState()
+
+    await _run_briefly(settings, battery_client, wallbox_client, history, state, timeout=0.05)
+    history.close()
+
+    assert battery_client.read_count == 0
+    assert state.decision.enable_charging is False
+
+
+class _VariableBattery:
+    """Reports insufficient surplus (net import) for the first `deficit_reads` calls,
+    then sufficient surplus (export) afterwards — simulates surplus dropping out and
+    later coming back."""
+
+    def __init__(self, deficit_reads: int) -> None:
+        self._deficit_reads = deficit_reads
+        self.read_count = 0
+
+    async def read(self) -> GridReading:
+        self.read_count += 1
+        grid_power_w = 2000.0 if self.read_count <= self._deficit_reads else -2000.0
+        return GridReading(
+            grid_power_w=grid_power_w, pv_power_w=None, battery_soc_pct=None, battery_power_w=None,
+            timestamp=datetime.now(),
+        )
+
+
+async def test_run_control_loop_resumes_after_self_induced_stop(tmp_path):
+    """When piLoading itself disables charging (deficit hysteresis) and go-e responds by
+    reporting car_state=COMPLETE, that's not a real completion — surplus reappearing
+    later must still resume charging, without ever going through IDLE."""
+    settings = make_settings(
+        control_interval_s=0.01, goe_poll_interval_s=0.01, start_delay_s=0.02, stop_delay_s=0.02,
+    )
+    wallbox_client = _FakeWallbox([CarState.WAIT_CAR, CarState.COMPLETE])
+    battery_client = _VariableBattery(deficit_reads=2)
+    history = HistoryStore(tmp_path / "history.db")
+    state = LatestState()
+
+    await _run_briefly(settings, battery_client, wallbox_client, history, state, timeout=0.3)
+    history.close()
+
+    assert battery_client.read_count > 2  # kept polling Viessmann through COMPLETE
+    assert any(enabled for enabled, _, _ in wallbox_client.set_charging_calls)
