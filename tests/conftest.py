@@ -29,6 +29,8 @@ def make_settings(**overrides) -> Settings:
         phase_switch_min_interval_s=600.0,
         control_interval_s=10.0,
         enable_phase_switching=True,
+        night_mode_after_s=600.0,
+        night_mode_poll_interval_s=600.0,
     )
     defaults.update(overrides)
     return Settings(**defaults)

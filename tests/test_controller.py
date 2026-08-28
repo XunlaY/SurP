@@ -190,6 +190,52 @@ def test_amps_are_clamped_to_min_and_max(base_time):
     assert d_low.target_amps == 6
 
 
+def test_night_mode_activates_after_sustained_deficit_and_clears_on_surplus(base_time):
+    settings = make_settings(night_mode_after_s=300.0)
+    controller = SurplusController(settings)
+    wb = wallbox(base_time, charging=False)
+
+    d0 = controller.decide(grid(2000, base_time), wb, base_time)
+    assert d0.night_mode is False
+
+    t1 = base_time + timedelta(seconds=299)
+    d1 = controller.decide(grid(2000, t1), wb, t1)
+    assert d1.night_mode is False  # not sustained long enough yet
+
+    t2 = base_time + timedelta(seconds=300)
+    d2 = controller.decide(grid(2000, t2), wb, t2)
+    assert d2.night_mode is True
+
+    # Surplus returning clears night mode immediately, without waiting for start_delay_s.
+    t3 = t2 + timedelta(seconds=10)
+    d3 = controller.decide(grid(-2000, t3), wb, t3)
+    assert d3.night_mode is False
+
+
+def test_night_mode_deficit_timer_resets_on_brief_surplus(base_time):
+    settings = make_settings(night_mode_after_s=300.0)
+    controller = SurplusController(settings)
+    wb = wallbox(base_time, charging=False)
+
+    controller.decide(grid(2000, base_time), wb, base_time)
+
+    # A brief surplus interrupts the deficit streak — this must reset the night-mode timer.
+    t1 = base_time + timedelta(seconds=200)
+    controller.decide(grid(-2000, t1), wb, t1)
+
+    t2 = t1 + timedelta(seconds=1)
+    controller.decide(grid(2000, t2), wb, t2)
+
+    # Only 299s of *consecutive* deficit since t2 — must still not be in night mode.
+    t3 = t2 + timedelta(seconds=299)
+    d3 = controller.decide(grid(2000, t3), wb, t3)
+    assert d3.night_mode is False
+
+    t4 = t2 + timedelta(seconds=300)
+    d4 = controller.decide(grid(2000, t4), wb, t4)
+    assert d4.night_mode is True
+
+
 class _FakeWallbox:
     """Returns car_states[i] on the i-th read_status() call, repeating the last entry
     for any calls beyond the end of the list."""
@@ -282,6 +328,43 @@ async def test_run_control_loop_skips_viessmann_on_genuine_completion(tmp_path):
 
     assert battery_client.read_count == 0
     assert state.decision.enable_charging is False
+
+
+async def test_run_control_loop_slows_down_once_night_mode_kicks_in(tmp_path):
+    """Once a sustained deficit triggers night mode, the loop must sleep
+    night_mode_poll_interval_s instead of control_interval_s, so it stops hammering
+    Viessmann while there's no realistic chance of surplus returning soon."""
+    settings = make_settings(
+        control_interval_s=0.01,
+        goe_poll_interval_s=0.01,
+        night_mode_after_s=0.025,
+        night_mode_poll_interval_s=1.0,
+        start_delay_s=0.0,
+        stop_delay_s=0.0,
+    )
+    wallbox_client = _FakeWallbox([CarState.WAIT_CAR])
+    battery_client = _FakeBattery()
+    battery_client_deficit_reading = GridReading(
+        grid_power_w=2000.0, pv_power_w=None, battery_soc_pct=None, battery_power_w=None,
+        timestamp=datetime.now(),
+    )
+
+    async def read_deficit() -> GridReading:
+        battery_client.read_count += 1
+        return battery_client_deficit_reading
+
+    battery_client.read = read_deficit
+    history = HistoryStore(tmp_path / "history.db")
+    state = LatestState()
+
+    # Long enough for night mode to kick in (after ~0.025s of deficit) and for a
+    # 1s night-mode sleep to clearly not have elapsed yet within this timeout.
+    await _run_briefly(settings, battery_client, wallbox_client, history, state, timeout=0.3)
+    history.close()
+
+    assert state.decision.night_mode is True
+    # Without the night-mode slowdown, 0.3s at a 0.01s interval would yield ~30 reads.
+    assert battery_client.read_count < 10
 
 
 class _VariableBattery:

@@ -54,6 +54,14 @@ class Settings(BaseSettings):
     # no car is connected or a charge just finished, Viessmann isn't polled at all and
     # go-e falls back to goe_poll_interval_s instead — see run_control_loop.)
     control_interval_s: float = 10.0
+    # How long a sustained deficit (insufficient surplus, e.g. after sunset) must persist
+    # before the control loop switches to night mode, which polls at night_mode_poll_interval_s
+    # instead of control_interval_s to avoid burning through Viessmann's daily API rate
+    # limit overnight while there is no realistic chance of surplus returning soon.
+    night_mode_after_s: float = 600.0
+    # Poll interval used once night mode is active. Falls back to control_interval_s
+    # immediately once surplus becomes sufficient again, which also resumes charging.
+    night_mode_poll_interval_s: float = 600.0
 
     # Storage / web dashboard
     db_path: Path = Field(default_factory=lambda: Path("~/.local/share/piloading/history.db").expanduser())

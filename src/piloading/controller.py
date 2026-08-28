@@ -48,6 +48,7 @@ class SurplusController:
         self._update_phase_decision(target_power, now)
 
         sufficient_w = s.min_amp * s.voltage * self._phases
+        night_mode = False
         if target_power >= sufficient_w:
             self._deficit_since = None
             if self._surplus_since is None:
@@ -75,11 +76,14 @@ class SurplusController:
                 self._deficit_since = now
             if self._charging and now - self._deficit_since >= timedelta(seconds=s.stop_delay_s):
                 self._charging = False
+            deficit_elapsed = self._elapsed(self._deficit_since, now)
+            night_mode = deficit_elapsed >= s.night_mode_after_s
             reason = (
-                f"Kein ausreichender Überschuss seit {self._elapsed(self._deficit_since, now):.0f}s"
+                f"Kein ausreichender Überschuss seit {deficit_elapsed:.0f}s"
+                + (" – Nachtmodus aktiv, Abfrageintervall verlängert" if night_mode else "")
                 if not self._charging
                 else f"Überschuss reicht nicht mehr, Stoppschwelle in "
-                f"{max(0.0, s.stop_delay_s - self._elapsed(self._deficit_since, now)):.0f}s (halte {self._last_amps} A)"
+                f"{max(0.0, s.stop_delay_s - deficit_elapsed):.0f}s (halte {self._last_amps} A)"
             )
 
         return ControlDecision(
@@ -87,6 +91,7 @@ class SurplusController:
             target_amps=self._last_amps,
             target_phases=self._phases,
             reason=reason,
+            night_mode=night_mode,
         )
 
     def _update_phase_decision(self, target_power: float, now: datetime) -> None:
@@ -253,6 +258,7 @@ async def run_control_loop(
                 decision = ControlDecision(
                     enable_charging=False, target_amps=decision.target_amps, target_phases=decision.target_phases,
                     reason=f"Daten seit {stale_s:.0f}s veraltet – Ladung gestoppt",
+                    night_mode=decision.night_mode,
                 )
             elif stale_s > settings.viessmann_stale_warn_s:
                 logger.warning("Batteriesystem-Daten seit %.0fs veraltet – erhöhe Strom nicht weiter", stale_s)
@@ -264,6 +270,7 @@ async def run_control_loop(
                     enable_charging=decision.enable_charging, target_amps=capped_amps,
                     target_phases=decision.target_phases,
                     reason=f"Daten seit {stale_s:.0f}s veraltet – erhöhe Strom nicht weiter",
+                    night_mode=decision.night_mode,
                 )
 
         if not settings.dry_run:
@@ -287,4 +294,5 @@ async def run_control_loop(
         state.updated_at = now
         last_applied = decision
 
-        await asyncio.sleep(settings.control_interval_s)
+        sleep_s = settings.night_mode_poll_interval_s if decision.night_mode else settings.control_interval_s
+        await asyncio.sleep(sleep_s)

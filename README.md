@@ -116,3 +116,11 @@ pytest
   kein Auto angeschlossen oder der Ladevorgang bereits abgeschlossen, pausiert die
   Viessmann-Abfrage komplett und nur go-e wird noch (langsamer, alle
   `PILOADING_GOE_POLL_INTERVAL_S`, Standard 60s) auf ein neu angestecktes Auto abgefragt.
+- **Nachtmodus:** Hält ein Auto angeschlossen aber ohne ausreichenden Überschuss (z. B. nach
+  Sonnenuntergang) für `PILOADING_NIGHT_MODE_AFTER_S` (Standard 600s) an, wechselt der
+  Regelkreis auf das langsamere `PILOADING_NIGHT_MODE_POLL_INTERVAL_S` (Standard 600s) für
+  *beide* Abfragen (Viessmann und go-e), um das tägliche Anfragelimit nicht über Nacht
+  auszuschöpfen. Sobald wieder ausreichend Überschuss gemessen wird, schaltet der Regelkreis
+  sofort zurück auf `PILOADING_CONTROL_INTERVAL_S` und beginnt (nach Ablauf von
+  `PILOADING_START_DELAY_S`) wieder zu laden. Im Dashboard wird der Nachtmodus mit einem
+  Banner angezeigt.

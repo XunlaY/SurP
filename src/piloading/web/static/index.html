@@ -34,6 +34,15 @@
     margin-bottom: 1rem;
     font-weight: 600;
   }
+  #night-banner {
+    display: none;
+    background: var(--blue);
+    color: #0a1120;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-weight: 600;
+  }
   .cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -75,6 +84,7 @@
 <body>
   <h1>piLoading – PV-Überschussladen</h1>
   <div id="banner"></div>
+  <div id="night-banner">🌙 Nachtmodus aktiv – Abfrageintervall verlängert</div>
 
   <div class="cards">
     <div class="card">
@@ -147,6 +157,9 @@ async function refreshStatus() {
   } else {
     banner.style.display = "none";
   }
+
+  const nightBanner = document.getElementById("night-banner");
+  nightBanner.style.display = s.decision && s.decision.night_mode ? "block" : "none";
 
   if (s.grid) {
     const gp = s.grid.grid_power_w;

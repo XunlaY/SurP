@@ -53,3 +53,7 @@ class ControlDecision:
     target_amps: int
     target_phases: int
     reason: str
+    # True once a sustained deficit has triggered night mode (see SurplusController.decide
+    # and Settings.night_mode_after_s) — tells run_control_loop to poll at
+    # night_mode_poll_interval_s instead of control_interval_s.
+    night_mode: bool = False

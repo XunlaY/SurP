@@ -90,6 +90,17 @@ passing.
   flash-backed and rated for ~100k writes, so `set_charging` in
   [goe.py](src/piloading/clients/goe.py) only sends a key when its value actually changed since
   the last call — the same guard already used for `psm`.
+- **Night mode throttles polling during a sustained deficit.** `SurplusController.decide()`
+  tracks how long the current deficit has lasted (`_deficit_since`, the same timer that drives
+  `stop_delay_s`) and sets `ControlDecision.night_mode = True` once it exceeds
+  `night_mode_after_s` (default 600s) — e.g. after sunset, when the car stays plugged in but
+  there's no surplus. `run_control_loop` then sleeps `night_mode_poll_interval_s` (default
+  600s) instead of `control_interval_s` before the next cycle, which slows down *both* the
+  Viessmann and go-e polls (both happen once per cycle while a car is connected), to avoid
+  hitting Viessmann's daily API rate limit overnight. Night mode clears the instant surplus
+  becomes sufficient again — there's no separate cooldown/hysteresis for it, unlike
+  start_delay_s/stop_delay_s, since a deficit->surplus transition already resets
+  `_deficit_since` to `None` as a side effect of the existing surplus-branch logic.
 
 ## Testing
 
