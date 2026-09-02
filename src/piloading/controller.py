@@ -102,6 +102,41 @@ class SurplusController:
         three_phase_on_w = 3 * s.min_amp * s.voltage
         one_phase_off_w = 1 * s.min_amp * s.voltage * 0.85  # hysteresis band below the 1-phase floor
 
+        if not self._charging:
+            current_phase_sufficient_w = self._phases * s.min_amp * s.voltage
+            if target_power < current_phase_sufficient_w:
+                # Stopped, and surplus can no longer sustain the currently remembered
+                # phase count. decide()'s own sufficient_w check is keyed off
+                # self._phases, so if we left it pinned here, a session that stopped
+                # while at 3-phase would keep requiring 3-phase-sized surplus to ever
+                # resume — even once surplus has settled at a level that can only
+                # support 1-phase charging. That surplus level typically falls
+                # *between* the two thresholds below (enough to clear one_phase_off_w
+                # but not three_phase_on_w), so it would never cross the dead zone
+                # that would otherwise trigger a downshift, leaving charging stuck off
+                # indefinitely despite real, adequate surplus. Since no current flows
+                # through the contactor while stopped, resolving the phase count
+                # immediately here is safe — no flapping risk for the sustain-time
+                # hysteresis below to guard against — though we still rate-limit via
+                # phase_switch_min_interval_s since the physical contactor is switched
+                # either way. (Real incident: piLoading stayed off for ~15 minutes
+                # despite ~2-3kW of surplus, until the process happened to be
+                # restarted, which reset self._phases to its default of 1.)
+                wants = 3 if target_power >= three_phase_on_w else 1
+                if wants != self._phases:
+                    cooled_down = self._last_phase_switch is None or (
+                        now - self._last_phase_switch >= timedelta(seconds=s.phase_switch_min_interval_s)
+                    )
+                    if cooled_down:
+                        self._phases = wants
+                        self._last_phase_switch = now
+                self._phase_crossing_since = None
+                self._phase_crossing_wants = None
+                return
+            # Otherwise the currently remembered phase count is still (or again)
+            # sufficient, or charging simply hasn't started yet at the default
+            # phase count — fall through to the normal hysteresis logic below.
+
         wants: int | None = None
         if target_power >= three_phase_on_w:
             wants = 3

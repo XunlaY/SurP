@@ -138,6 +138,65 @@ def test_last_phase_switch_at_tracks_switch_time(base_time):
     assert controller.last_phase_switch_at == base_time
 
 
+def test_resumes_at_lower_phase_count_after_stopping_at_higher_one(base_time):
+    """Regression test for a real incident: charging stopped while at 3-phase, then
+    surplus settled at a level that could only ever sustain 1-phase charging (above
+    the 1-phase floor, but below the 3-phase minimum). Before this fix, decide()'s
+    sufficient_w check stayed keyed to the stale 3-phase phase count, and the
+    hysteresis dead zone below never triggered a downshift because surplus never
+    dropped low enough to cross it — charging stayed off indefinitely despite
+    adequate surplus. It must instead resolve the phase count down to 1 once stopped
+    and resume once start_delay_s elapses."""
+    settings = make_settings(
+        start_delay_s=15.0,
+        stop_delay_s=15.0,
+        phase_switch_sustain_s=0.0,
+        phase_switch_min_interval_s=0.0,
+        min_amp=6,
+        voltage=230.0,
+    )
+    controller = SurplusController(settings)
+    # wallbox always reports charging=False so target_power tracks -grid_power_w
+    # directly (current_wallbox_power is 0), isolating the controller's own state.
+    wb = wallbox(base_time, charging=False)
+
+    # Big surplus immediately switches to 3-phase (no sustain needed to get there),
+    # then start_delay_s elapses and charging actually starts.
+    t0 = base_time
+    switched = controller.decide(grid(-6000, t0), wb, t0)
+    assert switched.target_phases == 3
+    t0b = t0 + timedelta(seconds=16)
+    started = controller.decide(grid(-6000, t0b), wb, t0b)
+    assert started.enable_charging is True
+
+    # Surplus drops to a level insufficient for 3-phase (4140W) but comfortably
+    # enough for 1-phase (1380W) — 3500W of surplus (grid=-3500).
+    t1 = t0b + timedelta(seconds=1)
+    still_charging = controller.decide(grid(-3500, t1), wb, t1)
+    assert still_charging.enable_charging is True  # inside stop_delay_s grace window
+    assert still_charging.target_phases == 3  # not stopped yet, hysteresis still applies
+
+    # stop_delay_s elapses with the same insufficient-for-3-phase surplus persisting.
+    t2 = t1 + timedelta(seconds=16)
+    stopped = controller.decide(grid(-3500, t2), wb, t2)
+    assert stopped.enable_charging is False
+
+    # Next cycle: now that the controller is stopped, it must resolve the phase
+    # count down to 1 immediately (surplus can't sustain 3-phase, but comfortably
+    # sustains 1-phase) instead of staying pinned at 3.
+    t3 = t2 + timedelta(seconds=1)
+    resolved = controller.decide(grid(-3500, t3), wb, t3)
+    assert resolved.target_phases == 1
+    assert resolved.enable_charging is False  # still waiting out start_delay_s
+
+    # Once start_delay_s elapses with the same 1-phase-sufficient surplus, charging
+    # must resume — this is the behavior the original bug prevented.
+    t4 = t3 + timedelta(seconds=16)
+    resumed = controller.decide(grid(-3500, t4), wb, t4)
+    assert resumed.enable_charging is True
+    assert resumed.target_phases == 1
+
+
 def test_amp_changes_respect_cooldown(base_time):
     settings = make_settings(start_delay_s=0.0, amp_change_cooldown_s=30.0, min_amp=6, max_amp=16, voltage=230.0)
     controller = SurplusController(settings)
