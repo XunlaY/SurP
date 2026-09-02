@@ -109,7 +109,7 @@ pytest
   kurzzeitig `car_state=COMPLETE` zu melden, obwohl das Auto weiterlädt — Ursache eines
   realen Vorfalls, bei dem piLoading direkt nach einem 1->3-Phasenwechsel einen laufenden
   (nicht vollen) Ladevorgang fälschlich als beendet behandelt hat. piLoading ignoriert
-  `COMPLETE` daher für `PILOADING_PHASE_SWITCH_SETTLE_S` (Standard 30s) nach einem eigenen
+  `COMPLETE` daher für `PILOADING_PHASE_SWITCH_SETTLE_S` (Standard 15s) nach einem eigenen
   Phasenwechsel.
 - Die Viessmann-Feature-Namen für PV-Leistung und Batterie (`photovoltaic.*`, `ess.*`) sind
   plausible Annahmen, aber nicht offiziell für den VX3 bestätigt — nur die Netz-Feature

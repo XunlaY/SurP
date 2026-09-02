@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # actually finishing (see run_control_loop's phase-switch handling). Any COMPLETE
     # seen within this many seconds of our own last phase switch is treated as caused
     # by that switch, not a real completion.
-    phase_switch_settle_s: float = 30.0
+    phase_switch_settle_s: float = 15.0
     amp_change_cooldown_s: float = 15.0
     # How often the control loop re-evaluates the charging decision. Whenever a car is
     # connected and possibly charging, this is also how often *both* the go-e wallbox

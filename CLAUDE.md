@@ -75,7 +75,7 @@ passing.
   switch was immediately followed by the loop treating an in-progress (not full) charge
   as finished, with `charging_stopped_by_us` still `False` at the time. So
   `run_control_loop` also checks `SurplusController.last_phase_switch_at` and suppresses
-  the no-session transition for `PILOADING_PHASE_SWITCH_SETTLE_S` (default 30s) after our
+  the no-session transition for `PILOADING_PHASE_SWITCH_SETTLE_S` (default 15s) after our
   own last phase switch, on top of the `charging_stopped_by_us` check. When `COMPLETE`
   follows our own stop or a recent phase switch, the loop keeps polling Viessmann at the
   normal `control_interval_s` instead of pausing, so surplus reappearing can still resume
