@@ -128,6 +128,16 @@ def test_phase_switch_requires_sustain_and_respects_min_interval(base_time):
     assert d5.target_phases == 1
 
 
+def test_last_phase_switch_at_tracks_switch_time(base_time):
+    settings = make_settings(phase_switch_sustain_s=0.0, phase_switch_min_interval_s=0.0, min_amp=6, voltage=230.0)
+    controller = SurplusController(settings)
+    assert controller.last_phase_switch_at is None
+
+    wb = wallbox(base_time, charging=False)
+    controller.decide(grid(-6000, base_time), wb, base_time)  # big surplus -> switches to 3-phase
+    assert controller.last_phase_switch_at == base_time
+
+
 def test_amp_changes_respect_cooldown(base_time):
     settings = make_settings(start_delay_s=0.0, amp_change_cooldown_s=30.0, min_amp=6, max_amp=16, voltage=230.0)
     controller = SurplusController(settings)
@@ -383,6 +393,42 @@ class _VariableBattery:
             grid_power_w=grid_power_w, pv_power_w=None, battery_soc_pct=None, battery_power_w=None,
             timestamp=datetime.now(),
         )
+
+
+async def test_run_control_loop_keeps_charging_through_phase_switch_complete_blip(tmp_path):
+    """A psm write toggles the physical contactor, which is suspected to make go-e
+    briefly report car_state=COMPLETE even though the car is still charging fine (see
+    controller.py). Within phase_switch_settle_s of our own last phase switch, that
+    COMPLETE must be ignored: no session reset, no frc=Off sent to the wallbox,
+    Viessmann polling continues uninterrupted."""
+    settings = make_settings(
+        control_interval_s=0.01, goe_poll_interval_s=0.01, start_delay_s=0.0, stop_delay_s=0.0,
+        phase_switch_sustain_s=0.0, phase_switch_min_interval_s=0.0, phase_switch_settle_s=5.0,
+        min_amp=6, max_amp=16, voltage=230.0,
+    )
+    # WAIT_CAR triggers the first decide() call, which (big surplus, zero sustain/interval)
+    # switches 1->3 phase and starts charging in the same cycle. COMPLETE then simulates
+    # the contactor-toggle blip on the very next read.
+    wallbox_client = _FakeWallbox([CarState.WAIT_CAR, CarState.COMPLETE])
+    battery_client = _FakeBattery()
+
+    async def read_big_surplus() -> GridReading:
+        battery_client.read_count += 1
+        return GridReading(
+            grid_power_w=-6000.0, pv_power_w=None, battery_soc_pct=None, battery_power_w=None,
+            timestamp=datetime.now(),
+        )
+
+    battery_client.read = read_big_surplus
+    history = HistoryStore(tmp_path / "history.db")
+    state = LatestState()
+
+    await _run_briefly(settings, battery_client, wallbox_client, history, state, timeout=0.3)
+    history.close()
+
+    assert battery_client.read_count > 1  # kept polling Viessmann through the COMPLETE blip
+    assert not any(not enabled for enabled, _, _ in wallbox_client.set_charging_calls)  # never told to stop
+    assert "pausiert" not in state.decision.reason  # not treated as a paused/no-session state
 
 
 async def test_run_control_loop_resumes_after_self_induced_stop(tmp_path):

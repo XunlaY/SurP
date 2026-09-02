@@ -127,6 +127,14 @@ class SurplusController:
             self._phase_crossing_since = None
             self._phase_crossing_wants = None
 
+    @property
+    def last_phase_switch_at(self) -> datetime | None:
+        """When the physical contactor was last toggled via a psm write, or None if
+        never. Used by run_control_loop to recognize a go-e car_state=COMPLETE blip
+        caused by that switch rather than the car actually finishing charging.
+        """
+        return self._last_phase_switch
+
     @staticmethod
     def _elapsed(since: datetime | None, now: datetime) -> float:
         return 0.0 if since is None else (now - since).total_seconds()
@@ -188,12 +196,30 @@ async def run_control_loop(
             await asyncio.sleep(settings.control_interval_s)
             continue
 
+        # A psm write toggles the physical contactor, which can plausibly make go-e
+        # briefly report car_state=COMPLETE while it reconnects, even though the car is
+        # still plugged in and charging fine — suspected root cause of a real-world case
+        # where a 1->3-phase switch was immediately followed by piLoading treating an
+        # in-progress (not full) charge as finished. Treat any COMPLETE within
+        # phase_switch_settle_s of our last switch the same as a self-induced stop: don't
+        # reset the session or tell go-e to stop, just keep polling as if nothing happened.
+        last_switch = controller.last_phase_switch_at
+        recent_phase_switch = last_switch is not None and now - last_switch <= timedelta(
+            seconds=settings.phase_switch_settle_s
+        )
+        if wallbox.car_state is CarState.COMPLETE and recent_phase_switch and not charging_stopped_by_us:
+            logger.info(
+                "COMPLETE kurz nach Phasenwechsel (%.0fs) – ignoriere, Ladevorgang läuft vermutlich weiter",
+                (now - last_switch).total_seconds(),
+            )
+
         # No car connected always means no session. COMPLETE only means no session when
         # the car stopped itself — if *we* were the last ones to disable charging (deficit
-        # hysteresis or a stale-data stop), go-e still reports COMPLETE, but surplus may
-        # still return, so we must keep polling Viessmann instead of pausing forever.
+        # hysteresis or a stale-data stop), or a phase switch just flipped the contactor,
+        # go-e still reports COMPLETE, but surplus may still return (or charging never
+        # actually stopped), so we must keep polling Viessmann instead of pausing forever.
         no_session = wallbox.car_state is CarState.IDLE or (
-            wallbox.car_state is CarState.COMPLETE and not charging_stopped_by_us
+            wallbox.car_state is CarState.COMPLETE and not charging_stopped_by_us and not recent_phase_switch
         )
         if no_session:
             # Nothing to control, and no point spending a Viessmann API call on it. Reset

@@ -69,9 +69,16 @@ passing.
   hardware, sending `frc=Off` flips `car` from `WAIT_CAR`/`CHARGING` straight to
   `COMPLETE`. So the loop tracks a local `charging_stopped_by_us` flag (set from the final
   `decision.enable_charging` each normal cycle) and only treats `COMPLETE` as a real
-  no-session state when that flag is `False` — i.e. the car stopped itself, not us. When
-  `COMPLETE` follows our own stop, the loop keeps polling Viessmann at the normal
-  `control_interval_s` instead of pausing, so surplus reappearing can still resume
+  no-session state when that flag is `False` — i.e. the car stopped itself, not us. A
+  phase switch (`psm`) is suspected to cause the same false `COMPLETE` blip by toggling
+  the physical contactor — root-caused from a real-world incident where a 1<->3-phase
+  switch was immediately followed by the loop treating an in-progress (not full) charge
+  as finished, with `charging_stopped_by_us` still `False` at the time. So
+  `run_control_loop` also checks `SurplusController.last_phase_switch_at` and suppresses
+  the no-session transition for `PILOADING_PHASE_SWITCH_SETTLE_S` (default 30s) after our
+  own last phase switch, on top of the `charging_stopped_by_us` check. When `COMPLETE`
+  follows our own stop or a recent phase switch, the loop keeps polling Viessmann at the
+  normal `control_interval_s` instead of pausing, so surplus reappearing can still resume
   charging without needing an unplug/replug. Only in the genuine no-session case does the
   loop skip `battery_client.read()`, call `SurplusController.reset_session()`, and sleep
   `goe_poll_interval_s` (default 60s) instead of `control_interval_s` — go-e is still
