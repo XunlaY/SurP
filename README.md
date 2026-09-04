@@ -6,6 +6,24 @@ und steuert eine **go-e Wallbox** über deren lokale Netzwerk-API so, dass das A
 nur mit PV-Überschuss statt mit Netzstrom geladen wird. Läuft unverändert auf einem Mac
 (Entwicklung, mit simulierter Hardware) und auf einem Raspberry Pi (echte Hardware).
 
+## Screenshot
+
+Web-Dashboard (Mock-Modus, `PILOADING_DRY_RUN=true`, unter `http://localhost:8080/`):
+
+![piLoading Dashboard](docs/screenshot.png)
+
+> **⚠️ Haftungsausschluss – auf eigene Gefahr**
+>
+> Dieses Projekt steuert **echte Hardware** (Wallbox, Ladevorgang, Batterie). Es wird
+> **ohne jegliche Gewährleistung** bereitgestellt („as is"). Die Nutzung erfolgt
+> **ausschließlich auf eigene Gefahr**. Der Autor übernimmt **keinerlei Haftung** für
+> Schäden an Ladegerät, Wallbox, Batterie, Fahrzeug-/Hausakku oder sonstiger Hardware oder
+> Einrichtungen, die direkt oder indirekt durch die Nutzung, Konfiguration oder
+> Fehlfunktion dieser Software entstehen – einschließlich übermäßiger Abnutzung oder
+> Beschädigung des Akkus sowie fehlerhafter Ladevorgänge. Prüfe deine Installation
+> sorgfältig und teste zuerst mit `PILOADING_DRY_RUN=true`, bevor die Wallbox im
+> Live-Betrieb angesteuert wird.
+
 ## Voraussetzungen
 
 - Python 3.11+
