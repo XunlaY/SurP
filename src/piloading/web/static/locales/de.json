@@ -1,0 +1,19 @@
+{
+  "title": "piLoading – PV-Überschussladen",
+  "lang_name": "Deutsch",
+  "night_banner": "🌙 Nachtmodus aktiv – Abfrageintervall verlängert",
+  "grid_label": "Netz",
+  "pv_label": "PV-Leistung",
+  "battery_label": "Batterie",
+  "wallbox_label": "Wallbox",
+  "grid_sub": "positiv = Bezug, negativ = Überschuss",
+  "decision_label": "Entscheidung",
+  "legend_net": "Netz (W)",
+  "legend_wallbox": "Wallbox (W)",
+  "legend_period": "letzte 24h",
+  "conn_lost": "Verbindung zum Server verloren …",
+  "stale_banner": "Achtung: Messwerte sind veraltet.",
+  "phase_detail": "{phases}-phasig",
+  "error_detail": "Fehler: {error}",
+  "updated_prefix": "Stand:"
+}

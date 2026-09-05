@@ -1,0 +1,19 @@
+{
+  "title": "piLoading – PV Surplus Charging",
+  "lang_name": "English",
+  "night_banner": "🌙 Night mode active – polling interval extended",
+  "grid_label": "Grid",
+  "pv_label": "Solar output",
+  "battery_label": "Battery",
+  "wallbox_label": "Wallbox",
+  "grid_sub": "positive = import, negative = surplus",
+  "decision_label": "Decision",
+  "legend_net": "Grid (W)",
+  "legend_wallbox": "Wallbox (W)",
+  "legend_period": "last 24h",
+  "conn_lost": "Connection to server lost …",
+  "stale_banner": "Warning: readings are stale.",
+  "phase_detail": "{phases}-phase",
+  "error_detail": "Error: {error}",
+  "updated_prefix": "Updated:"
+}

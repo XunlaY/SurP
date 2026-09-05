@@ -71,9 +71,18 @@ class Settings(BaseSettings):
 
     # Storage / web dashboard
     db_path: Path = Field(default_factory=lambda: Path("~/.local/share/piloading/history.db").expanduser())
+    # Dashboard display language, read from .env at startup so the choice made via
+    # the in-page language button survives a restart. ISO 639-1 code with a matching
+    # locale file in static/locales/.
+    lang: str = "en"
     web_host: str = "0.0.0.0"
     web_port: int = 8080
 
     @property
     def viessmann_auth_file(self) -> Path:
         return self.viessmann_config_dir / "viessmann_auth.json"
+
+    @property
+    def env_file(self) -> Path:
+        """Path of the .env file pydantic-settings reads (relative to CWD)."""
+        return Path(".env")

@@ -87,3 +87,91 @@ async def test_history_returns_inserted_samples(client):
     assert len(rows) == 1
     assert rows[0]["grid_power_w"] == -1000
     assert rows[0]["wallbox_power_w"] == 1500
+
+
+def _lang_client(tmp_path, env_file):
+    from piloading.controller import LatestState
+    from piloading.history import HistoryStore
+    from piloading.web.app import create_app
+
+    history = HistoryStore(tmp_path / "history.db")
+    state = LatestState()
+    app = create_app(state, history, env_file=env_file)
+    transport = httpx.ASGITransport(app=app)
+    return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+
+async def test_lang_defaults_to_en_when_no_env(tmp_path):
+    env_file = tmp_path / ".env"
+    ac = _lang_client(tmp_path, env_file)
+    async with ac:
+        response = await ac.get("/api/lang")
+    assert response.status_code == 200
+    assert response.json() == {"lang": "en"}
+
+
+async def test_lang_get_reads_persisted_env(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("PILOADING_MODE=live\nPILOADING_LANG=en\n", encoding="utf-8")
+    ac = _lang_client(tmp_path, env_file)
+    async with ac:
+        response = await ac.get("/api/lang")
+    assert response.status_code == 200
+    assert response.json() == {"lang": "en"}
+
+
+async def test_lang_post_persists_to_env_and_updates(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("PILOADING_MODE=live\n", encoding="utf-8")
+    ac = _lang_client(tmp_path, env_file)
+    async with ac:
+        response = await ac.post("/api/lang", json={"lang": "en"})
+        assert response.status_code == 200
+        assert response.json() == {"lang": "en"}
+
+        # The running app reflects the new language immediately.
+        follow_up = await ac.get("/api/lang")
+        assert follow_up.json() == {"lang": "en"}
+
+    # .env file now carries the persisted language.
+    content = env_file.read_text(encoding="utf-8")
+    assert "PILOADING_LANG=en" in content.splitlines()
+
+    # A fresh app instance (simulating a restart) picks the persisted language up.
+    ac2 = _lang_client(tmp_path, env_file)
+    async with ac2:
+        response = await ac2.get("/api/lang")
+    assert response.json() == {"lang": "en"}
+
+
+async def test_lang_post_overwrites_existing_key_in_place(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("PILOADING_LANG=de\nPILOADING_MODE=live\n", encoding="utf-8")
+    ac = _lang_client(tmp_path, env_file)
+    async with ac:
+        await ac.post("/api/lang", json={"lang": "en"})
+
+    lines = env_file.read_text(encoding="utf-8").splitlines()
+    assert lines == ["PILOADING_LANG=en", "PILOADING_MODE=live"]
+
+
+async def test_lang_post_rejects_unknown_language(tmp_path):
+    env_file = tmp_path / ".env"
+    ac = _lang_client(tmp_path, env_file)
+    async with ac:
+        response = await ac.post("/api/lang", json={"lang": "xx"})
+    assert response.status_code == 400
+    # Nothing was written to the env file.
+    assert not env_file.exists() or "PILOADING_LANG" not in env_file.read_text()
+
+
+async def test_locale_files_are_served(tmp_path):
+    env_file = tmp_path / ".env"
+    ac = _lang_client(tmp_path, env_file)
+    async with ac:
+        de = await ac.get("/locales/de.json")
+        en = await ac.get("/locales/en.json")
+    assert de.status_code == 200
+    assert de.json()["night_banner"]
+    assert en.status_code == 200
+    assert en.json()["night_banner"]
