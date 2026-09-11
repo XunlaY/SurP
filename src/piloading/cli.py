@@ -48,7 +48,7 @@ async def _run_async(settings: Settings) -> None:
     history = HistoryStore(settings.db_path)
     state = LatestState()
 
-    app = create_app(state, history)
+    app = create_app(state, history, env_file=settings.env_file)
     server = uvicorn.Server(
         uvicorn.Config(app, host=settings.web_host, port=settings.web_port, log_level="warning")
     )

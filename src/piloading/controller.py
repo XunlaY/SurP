@@ -64,12 +64,26 @@ class SurplusController:
                 if new_amps != self._last_amps and cooled_down:
                     self._last_amps = new_amps
                     self._last_amp_change = now
-            reason = (
-                f"Überschuss reicht ({target_power:.0f} W) – lade {self._phases}-phasig mit {self._last_amps} A"
-                if self._charging
-                else f"Überschuss seit {self._elapsed(self._surplus_since, now):.0f}s, "
-                f"warte auf Startschwelle ({s.start_delay_s:.0f}s)"
-            )
+            if self._charging:
+                reason_key = "reason_charging_surplus"
+                reason = (
+                    f"Überschuss reicht ({target_power:.0f} W) – lade {self._phases}-phasig mit {self._last_amps} A"
+                )
+                reason_vars = {
+                    "w": f"{target_power:.0f}",
+                    "phases": str(self._phases),
+                    "amps": str(self._last_amps),
+                }
+            else:
+                reason_key = "reason_wait_start"
+                reason = (
+                    f"Überschuss seit {self._elapsed(self._surplus_since, now):.0f}s, "
+                    f"warte auf Startschwelle ({s.start_delay_s:.0f}s)"
+                )
+                reason_vars = {
+                    "elapsed": f"{self._elapsed(self._surplus_since, now):.0f}",
+                    "delay": f"{s.start_delay_s:.0f}",
+                }
         else:
             self._surplus_since = None
             if self._deficit_since is None:
@@ -78,13 +92,25 @@ class SurplusController:
                 self._charging = False
             deficit_elapsed = self._elapsed(self._deficit_since, now)
             night_mode = deficit_elapsed >= s.night_mode_after_s
-            reason = (
-                f"Kein ausreichender Überschuss seit {deficit_elapsed:.0f}s"
-                + (" – Nachtmodus aktiv, Abfrageintervall verlängert" if night_mode else "")
-                if not self._charging
-                else f"Überschuss reicht nicht mehr, Stoppschwelle in "
-                f"{max(0.0, s.stop_delay_s - deficit_elapsed):.0f}s (halte {self._last_amps} A)"
-            )
+            if not self._charging:
+                reason_key = "reason_insufficient_surplus"
+                reason = f"Kein ausreichender Überschuss seit {deficit_elapsed:.0f}s"
+                reason_vars = {"elapsed": f"{deficit_elapsed:.0f}"}
+                if night_mode:
+                    reason += " – Nachtmodus aktiv, Abfrageintervall verlängert"
+                    # The night-mode suffix is its own key so the dashboard can reuse it
+                    # with the same translation in both languages.
+                    reason_key = "reason_insufficient_surplus_night"
+            else:
+                reason_key = "reason_insufficient_stopping"
+                reason = (
+                    f"Überschuss reicht nicht mehr, Stoppschwelle in "
+                    f"{max(0.0, s.stop_delay_s - deficit_elapsed):.0f}s (halte {self._last_amps} A)"
+                )
+                reason_vars = {
+                    "remaining": f"{max(0.0, s.stop_delay_s - deficit_elapsed):.0f}",
+                    "amps": str(self._last_amps),
+                }
 
         return ControlDecision(
             enable_charging=self._charging,
@@ -92,6 +118,8 @@ class SurplusController:
             target_phases=self._phases,
             reason=reason,
             night_mode=night_mode,
+            reason_key=reason_key,
+            reason_vars=reason_vars,
         )
 
     def _update_phase_decision(self, target_power: float, now: datetime) -> None:
@@ -264,16 +292,21 @@ async def run_control_loop(
             # again.
             controller.reset_session()
             charging_stopped_by_us = False
-            reason = (
-                "Kein Auto angeschlossen – Viessmann-Abfrage pausiert"
-                if wallbox.car_state is CarState.IDLE
-                else "Ladevorgang vom Auto beendet (Fahrzeug bleibt angeschlossen) – Viessmann-Abfrage pausiert"
-            )
+            if wallbox.car_state is CarState.IDLE:
+                reason_key = "reason_no_car"
+                reason = "Kein Auto angeschlossen – Viessmann-Abfrage pausiert"
+                reason_vars = None
+            else:
+                reason_key = "reason_car_complete"
+                reason = "Ladevorgang vom Auto beendet (Fahrzeug bleibt angeschlossen) – Viessmann-Abfrage pausiert"
+                reason_vars = None
             decision = ControlDecision(
                 enable_charging=False,
                 target_amps=last_applied.target_amps if last_applied else settings.min_amp,
                 target_phases=last_applied.target_phases if last_applied else 1,
                 reason=reason,
+                reason_key=reason_key,
+                reason_vars=reason_vars,
             )
             if not settings.dry_run:
                 try:
@@ -305,6 +338,8 @@ async def run_control_loop(
             decision = ControlDecision(
                 enable_charging=False, target_amps=settings.min_amp, target_phases=1,
                 reason="Warte auf erste Messung vom Batteriesystem",
+                reason_key="reason_wait_first_reading",
+                reason_vars=None,
             )
         else:
             decision = controller.decide(grid, wallbox, now)
@@ -319,6 +354,8 @@ async def run_control_loop(
                 decision = ControlDecision(
                     enable_charging=False, target_amps=decision.target_amps, target_phases=decision.target_phases,
                     reason=f"Daten seit {stale_s:.0f}s veraltet – Ladung gestoppt",
+                    reason_key="reason_stale_stop",
+                    reason_vars={"elapsed": f"{stale_s:.0f}"},
                     night_mode=decision.night_mode,
                 )
             elif stale_s > settings.viessmann_stale_warn_s:
@@ -331,6 +368,8 @@ async def run_control_loop(
                     enable_charging=decision.enable_charging, target_amps=capped_amps,
                     target_phases=decision.target_phases,
                     reason=f"Daten seit {stale_s:.0f}s veraltet – erhöhe Strom nicht weiter",
+                    reason_key="reason_stale_cap",
+                    reason_vars={"elapsed": f"{stale_s:.0f}"},
                     night_mode=decision.night_mode,
                 )
 

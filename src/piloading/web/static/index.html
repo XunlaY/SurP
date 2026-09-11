@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -24,7 +24,19 @@
     color: var(--text);
     padding: 1.5rem;
   }
-  h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 1rem; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+  h1 { font-size: 1.3rem; font-weight: 600; margin: 0; }
+  #lang-btn {
+    background: var(--card-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #lang-btn:hover { border-color: var(--blue); }
   #banner {
     display: none;
     background: var(--amber);
@@ -82,42 +94,45 @@
 </style>
 </head>
 <body>
-  <h1>piLoading – PV-Überschussladen</h1>
+  <header>
+    <h1 id="title">piLoading – PV-Überschussladen</h1>
+    <button id="lang-btn" type="button" title="">English</button>
+  </header>
   <div id="banner"></div>
-  <div id="night-banner">🌙 Nachtmodus aktiv – Abfrageintervall verlängert</div>
+  <div id="night-banner"></div>
 
   <div class="cards">
     <div class="card">
-      <div class="label">Netz</div>
+      <div class="label" data-i18n="grid_label">Netz</div>
       <div class="value" id="grid-power">–</div>
-      <div class="sub">positiv = Bezug, negativ = Überschuss</div>
+      <div class="sub" data-i18n="grid_sub">positiv = Bezug, negativ = Überschuss</div>
     </div>
     <div class="card">
-      <div class="label">PV-Leistung</div>
+      <div class="label" data-i18n="pv_label">PV-Leistung</div>
       <div class="value" id="pv-power">–</div>
     </div>
     <div class="card">
-      <div class="label">Batterie</div>
+      <div class="label" data-i18n="battery_label">Batterie</div>
       <div class="value" id="battery-soc">–</div>
       <div class="sub" id="battery-power"></div>
     </div>
     <div class="card">
-      <div class="label">Wallbox</div>
+      <div class="label" data-i18n="wallbox_label">Wallbox</div>
       <div class="value" id="wallbox-power">–</div>
       <div class="sub" id="wallbox-detail"></div>
     </div>
   </div>
 
   <div id="reason">
-    <div class="label" style="color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase;">Entscheidung</div>
+    <div class="label" style="color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase;" data-i18n="decision_label">Entscheidung</div>
     <div id="reason-text">–</div>
   </div>
 
   <div id="chart-wrap">
     <div class="legend">
-      <span class="swatch" style="background: var(--blue);"></span>Netz (W)
-      <span class="swatch" style="background: var(--green);"></span>Wallbox (W)
-      &nbsp;·&nbsp;letzte 24h
+      <span class="swatch" style="background: var(--blue);"></span><span data-i18n="legend_net">Netz (W)</span>
+      <span class="swatch" style="background: var(--green);"></span><span data-i18n="legend_wallbox">Wallbox (W)</span>
+      &nbsp;·&nbsp;<span data-i18n="legend_period">letzte 24h</span>
     </div>
     <canvas id="chart" width="1000" height="260"></canvas>
   </div>
@@ -125,7 +140,70 @@
   <footer id="updated">–</footer>
 
 <script>
-const fmtW = (w) => w === null || w === undefined ? "–" : Math.round(w).toLocaleString("de-DE") + " W";
+// --- localization ---------------------------------------------------------
+// Strings come from static/locales/<lang>.json. Adding a new language is just a
+// matter of dropping a <lang>.json file there; the button then picks it up.
+let LANG = "en";
+let CATALOG = {};
+
+function t(key, vars) {
+  let s = CATALOG[key] || key;
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      s = s.replace(new RegExp("\\{" + k + "\\}", "g"), v);
+    }
+  }
+  return s;
+}
+
+function localeTag() { return LANG === "en" ? "en-GB" : LANG === "de" ? "de-DE" : LANG; }
+
+async function loadCatalog(lang) {
+  const res = await fetch("/locales/" + encodeURIComponent(lang) + ".json");
+  if (!res.ok) throw new Error(`locale ${lang}: HTTP ${res.status}`);
+  CATALOG = await res.json();
+}
+
+function applyLanguage() {
+  document.documentElement.lang = LANG;
+  document.title = t("title");
+  document.getElementById("title").textContent = t("title");
+  document.getElementById("lang-btn").textContent = LANG === "en" ? "Deutsch" : "English";
+  document.getElementById("lang-btn").title = t("title");
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  refreshStatus();
+}
+
+async function initLanguage() {
+  try {
+    const res = await fetch("/api/lang");
+    const data = await res.json();
+    LANG = data.lang || "en";
+  } catch (e) {
+    LANG = "en";
+  }
+  await loadCatalog(LANG);
+  applyLanguage();
+}
+
+async function switchLanguage() {
+  const next = LANG === "en" ? "de" : "en";
+  // Persist to .env (so it survives a restart) and switch live.
+  const res = await fetch("/api/lang", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lang: next }),
+  });
+  if (!res.ok) return;
+  LANG = next;
+  await loadCatalog(LANG);
+  applyLanguage();
+}
+// --------------------------------------------------------------------------
+
+const fmtW = (w) => w === null || w === undefined ? "–" : Math.round(w).toLocaleString(localeTag()) + " W";
 const fmtA = (a) => a === null || a === undefined ? "–" : a.toFixed(1) + " %";
 
 async function fetchJSON(url) {
@@ -146,20 +224,25 @@ async function refreshStatus() {
   try {
     s = await fetchJSON("/api/status");
   } catch (e) {
-    setText("reason-text", "Verbindung zum Server verloren …");
+    setText("reason-text", t("conn_lost"));
     return;
   }
 
   const banner = document.getElementById("banner");
   if (s.stale) {
     banner.style.display = "block";
-    banner.textContent = "Achtung: Messwerte sind veraltet.";
+    banner.textContent = t("stale_banner");
   } else {
     banner.style.display = "none";
   }
 
   const nightBanner = document.getElementById("night-banner");
-  nightBanner.style.display = s.decision && s.decision.night_mode ? "block" : "none";
+  if (s.decision && s.decision.night_mode) {
+    nightBanner.style.display = "block";
+    nightBanner.textContent = t("night_banner");
+  } else {
+    nightBanner.style.display = "none";
+  }
 
   if (s.grid) {
     const gp = s.grid.grid_power_w;
@@ -173,15 +256,26 @@ async function refreshStatus() {
 
   if (s.wallbox) {
     setText("wallbox-power", fmtW(s.wallbox.power_w), s.wallbox.charging ? "green" : null);
-    const detail = `${s.wallbox.phases}-phasig · ${s.wallbox.amps_effective} A · ${s.wallbox.car_state}`;
-    setText("wallbox-detail", s.wallbox.error ? `${detail} · Fehler: ${s.wallbox.error}` : detail);
+    const phaseDetail = t("phase_detail", { phases: s.wallbox.phases });
+    let detail = `${phaseDetail} · ${s.wallbox.amps_effective} A · ${s.wallbox.car_state}`;
+    if (s.wallbox.error) {
+      const err = s.wallbox.error_key ? t(s.wallbox.error_key) : s.wallbox.error;
+      detail = `${detail} · ${t("error_detail", { error: err })}`;
+    }
+    setText("wallbox-detail", detail);
   }
 
   if (s.decision) {
-    setText("reason-text", s.decision.reason);
+    const reason = s.decision.reason_key
+      ? t(s.decision.reason_key, s.decision.reason_vars)
+      : s.decision.reason;
+    setText("reason-text", reason);
   }
 
-  setText("updated", s.updated_at ? "Stand: " + new Date(s.updated_at).toLocaleTimeString("de-DE") : "–");
+  const updatedEl = document.getElementById("updated");
+  updatedEl.textContent = s.updated_at
+    ? t("updated_prefix") + " " + new Date(s.updated_at).toLocaleTimeString(localeTag())
+    : "–";
 }
 
 function drawChart(canvas, samples) {
@@ -232,8 +326,12 @@ async function refreshHistory() {
   drawChart(document.getElementById("chart"), rows);
 }
 
-refreshStatus();
-refreshHistory();
+document.getElementById("lang-btn").addEventListener("click", switchLanguage);
+
+initLanguage().then(() => {
+  refreshStatus();
+  refreshHistory();
+});
 setInterval(refreshStatus, 5000);
 setInterval(refreshHistory, 60000);
 </script>

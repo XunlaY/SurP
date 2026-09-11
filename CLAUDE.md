@@ -36,9 +36,13 @@ passing.
 
 ## Important conventions
 
-- **Language split**: all user-facing text — CLI `--help`, log messages, dashboard labels,
-  README — is German, matching how the user actually runs and reads this system. Code,
-  comments, docstrings, and commit messages are English. Keep new user-visible strings German.
+- **Language split**: the dashboard and README are bilingual (English default + German).
+  Dashboard strings live in `src/piloading/web/static/locales/{de,en}.json` — edit there to
+  add/change a translated string, never inline in `index.html`. READMEs are
+  `README.md` (English) and `README.de.md` (German), cross-linked via the language selector
+  on the first line. CLI `--help`, log messages, and commit messages are English. Code,
+  comments, and docstrings are English. Keep the German/English README and locale files in
+  sync when either changes.
 - **Never commit credentials**: `.env`, `*.db`, `.viessmann_auth.json`, `piloading_config/` are
   gitignored on purpose — `viessmann_auth.json` contains a live refresh token. Don't loosen
   `.gitignore` for these paths, and double-check `git status` before committing anything touching

@@ -45,6 +45,10 @@ class WallboxStatus:
     energy_session_wh: float
     error: str | None
     timestamp: datetime
+    # Catalog key (see web/static/locales/*.json) for `error`, so the dashboard can
+    # render it in the selected language. None when there is no error or it has no
+    # localizable translation (e.g. the free-form fallback message).
+    error_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,3 +61,10 @@ class ControlDecision:
     # and Settings.night_mode_after_s) — tells run_control_loop to poll at
     # night_mode_poll_interval_s instead of control_interval_s.
     night_mode: bool = False
+    # Structured, language-neutral form of `reason` for the dashboard: a catalog key
+    # (see web/static/locales/*.json) plus its interpolation variables. The dashboard
+    # prefers these to render `reason` in the user's selected language; `reason` itself
+    # stays as the German human-readable text for logs and history. None when the reason
+    # is not localizable (e.g. a free-form decision).
+    reason_key: str | None = None
+    reason_vars: dict[str, str | int | float] | None = None
