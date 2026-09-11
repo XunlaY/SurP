@@ -15,5 +15,19 @@
   "stale_banner": "Warning: readings are stale.",
   "phase_detail": "{phases}-phase",
   "error_detail": "Error: {error}",
-  "updated_prefix": "Updated:"
+  "updated_prefix": "Updated:",
+  "reason_charging_surplus": "Surplus sufficient ({w} W) – charging {phases}-phase at {amps} A",
+  "reason_wait_start": "Surplus for {elapsed}s, waiting for start threshold ({delay}s)",
+  "reason_insufficient_surplus": "No sufficient surplus for {elapsed}s",
+  "reason_insufficient_surplus_night": "No sufficient surplus for {elapsed}s – night mode active, polling interval extended",
+  "reason_insufficient_stopping": "Surplus no longer sufficient, stop threshold in {remaining}s (holding {amps} A)",
+  "reason_no_car": "No car connected – Viessmann polling paused",
+  "reason_car_complete": "Charging finished by car (vehicle stays connected) – Viessmann polling paused",
+  "reason_wait_first_reading": "Waiting for first reading from battery system",
+  "reason_stale_stop": "Data stale for {elapsed}s – charging stopped",
+  "reason_stale_cap": "Data stale for {elapsed}s – not increasing current",
+  "err_rccb": "RCCB tripped",
+  "err_phase": "Phase fault",
+  "err_no_ground": "Grounding missing (NO_GROUND)",
+  "err_internal": "Internal error"
 }

@@ -56,7 +56,10 @@ async def test_status_reflects_latest_state(client):
     now = datetime(2026, 6, 1, 12, 0, 0)
     state.grid = grid(-1500, now)
     state.wallbox = wallbox(now, charging=True, power_w=2070, phases=1, amps=9)
-    state.decision = ControlDecision(enable_charging=True, target_amps=9, target_phases=1, reason="Test-Grund")
+    state.decision = ControlDecision(
+        enable_charging=True, target_amps=9, target_phases=1, reason="Test-Grund",
+        reason_key="reason_charging_surplus", reason_vars={"w": "1500", "phases": "1", "amps": "9"},
+    )
     state.stale = True
     state.updated_at = now
 
@@ -69,7 +72,28 @@ async def test_status_reflects_latest_state(client):
     assert body["wallbox"]["power_w"] == 2070
     assert body["wallbox"]["car_state"] == "CHARGING"
     assert body["decision"]["reason"] == "Test-Grund"
+    assert body["decision"]["reason_key"] == "reason_charging_surplus"
+    assert body["decision"]["reason_vars"] == {"w": "1500", "phases": "1", "amps": "9"}
     assert body["updated_at"] == now.isoformat()
+
+
+async def test_status_serializes_wallbox_error_key(client):
+    from piloading.models import CarState, WallboxStatus
+
+    ac, state, _ = client
+    now = datetime(2026, 6, 1, 12, 0, 0)
+    state.wallbox = WallboxStatus(
+        car_state=CarState.IDLE, charging=False, power_w=0.0, amps_effective=0, phases=1,
+        energy_session_wh=0.0, error="RCCB ausgelöst", error_key="err_rccb", timestamp=now,
+    )
+    state.decision = ControlDecision(enable_charging=False, target_amps=6, target_phases=1, reason="r")
+
+    async with ac:
+        response = await ac.get("/api/status")
+
+    body = response.json()
+    assert body["wallbox"]["error"] == "RCCB ausgelöst"
+    assert body["wallbox"]["error_key"] == "err_rccb"
 
 
 async def test_history_returns_inserted_samples(client):

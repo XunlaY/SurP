@@ -52,6 +52,16 @@ _ERROR_MESSAGES = {
     10: "Interner Fehler",
 }
 
+# Catalog keys (web/static/locales/*.json) matching _ERROR_MESSAGES, so the dashboard
+# can render the message in the user's selected language. Codes not listed (or the
+# free-form fallback for unknown codes) just fall back to the German `error` text.
+_ERROR_KEYS = {
+    1: "err_rccb",
+    3: "err_phase",
+    8: "err_no_ground",
+    10: "err_internal",
+}
+
 # Undocumented, community-reported values only — see module docstring.
 _PSM_ONE_PHASE = 1
 _PSM_THREE_PHASE = 2
@@ -108,6 +118,7 @@ class GoeWallboxClient:
 
         err_raw = int(data.get("err", 0))
         error = _ERROR_MESSAGES.get(err_raw, f"Unbekannter Fehlercode {err_raw}") if err_raw else None
+        error_key = _ERROR_KEYS.get(err_raw) if err_raw else None
 
         dws = float(data.get("dws", 0))  # deca-watt-seconds
         energy_session_wh = dws * 10.0 / 3600.0
@@ -125,6 +136,7 @@ class GoeWallboxClient:
             phases=phases,
             energy_session_wh=energy_session_wh,
             error=error,
+            error_key=error_key,
             timestamp=datetime.now(),
         )
 

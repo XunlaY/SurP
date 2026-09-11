@@ -259,13 +259,17 @@ async function refreshStatus() {
     const phaseDetail = t("phase_detail", { phases: s.wallbox.phases });
     let detail = `${phaseDetail} · ${s.wallbox.amps_effective} A · ${s.wallbox.car_state}`;
     if (s.wallbox.error) {
-      detail = `${detail} · ${t("error_detail", { error: s.wallbox.error })}`;
+      const err = s.wallbox.error_key ? t(s.wallbox.error_key) : s.wallbox.error;
+      detail = `${detail} · ${t("error_detail", { error: err })}`;
     }
     setText("wallbox-detail", detail);
   }
 
   if (s.decision) {
-    setText("reason-text", s.decision.reason);
+    const reason = s.decision.reason_key
+      ? t(s.decision.reason_key, s.decision.reason_vars)
+      : s.decision.reason;
+    setText("reason-text", reason);
   }
 
   const updatedEl = document.getElementById("updated");
