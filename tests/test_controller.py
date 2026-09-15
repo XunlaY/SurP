@@ -384,7 +384,7 @@ async def test_run_control_loop_resumes_battery_polling_once_car_connects(tmp_pa
 
 async def test_run_control_loop_skips_viessmann_on_genuine_completion(tmp_path):
     """car_state=COMPLETE with no prior control from us (e.g. the car was already
-    finished when piLoading started) is a real "car is full" — Viessmann polling
+    finished when SurP started) is a real "car is full" — Viessmann polling
     should pause, same as CarState.IDLE."""
     settings = make_settings(control_interval_s=0.01, goe_poll_interval_s=0.01)
     wallbox_client = _FakeWallbox([CarState.COMPLETE])
@@ -491,7 +491,7 @@ async def test_run_control_loop_keeps_charging_through_phase_switch_complete_bli
 
 
 async def test_run_control_loop_resumes_after_self_induced_stop(tmp_path):
-    """When piLoading itself disables charging (deficit hysteresis) and go-e responds by
+    """When SurP itself disables charging (deficit hysteresis) and go-e responds by
     reporting car_state=COMPLETE, that's not a real completion — surplus reappearing
     later must still resume charging, without ever going through IDLE."""
     settings = make_settings(

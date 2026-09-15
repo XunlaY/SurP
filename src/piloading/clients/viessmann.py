@@ -1,5 +1,5 @@
 """Real Viessmann Vitocharge VX3 client — polls grid/PV/battery power via the cloud
-IoT API. Requires a token file created once via `piloading auth-viessmann`
+IoT API. Requires a token file created once via `surp auth-viessmann`
 (see viessmann_auth.py).
 
 Confidence levels on the feature names below (see the plan's "known risks" section):
@@ -47,7 +47,7 @@ _STATISTIC_SUFFIXES = (".day", ".week", ".month", ".year", ".total")
 
 
 class ViessmannAuthError(RuntimeError):
-    """The stored token can't be refreshed — needs `piloading auth-viessmann` again."""
+    """The stored token can't be refreshed — needs `surp auth-viessmann` again."""
 
 
 class ViessmannClient:
@@ -78,7 +78,7 @@ class ViessmannClient:
         if response.status_code >= 400:
             raise ViessmannAuthError(
                 f"Token-Refresh fehlgeschlagen (HTTP {response.status_code}). "
-                "Bitte `piloading auth-viessmann` erneut ausführen."
+                "Bitte `surp auth-viessmann` erneut ausführen."
             )
         payload = response.json()
         self._auth["access_token"] = payload["access_token"]

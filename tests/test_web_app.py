@@ -37,7 +37,7 @@ async def test_index_serves_dashboard_html(client):
     async with ac:
         response = await ac.get("/")
     assert response.status_code == 200
-    assert "piLoading" in response.text
+    assert "SurP" in response.text
 
 
 async def test_status_before_any_data_is_all_none(client):

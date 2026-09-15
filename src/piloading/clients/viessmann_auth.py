@@ -1,5 +1,5 @@
 """One-time interactive OAuth2 + PKCE setup for the Viessmann Developer API, run via
-`piloading auth-viessmann` on a machine with a browser (the Mac, not the Pi).
+`surp auth-viessmann` on a machine with a browser (the Mac, not the Pi).
 
 Prerequisite: a client must already be registered on the Viessmann Developer Portal
 (https://developer.viessmann-climatesolutions.com) with `http://localhost:4200/callback`

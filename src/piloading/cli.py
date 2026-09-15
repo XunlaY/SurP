@@ -1,4 +1,4 @@
-"""CLI entry point: `piloading run` and `piloading auth-viessmann`."""
+"""CLI entry point: `surp run` and `surp auth-viessmann`."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _build_clients(
     if not settings.viessmann_auth_file.exists():
         raise SystemExit(
             f"Keine Viessmann-Zugangsdaten unter {settings.viessmann_auth_file} gefunden. "
-            "Bitte zuerst `piloading auth-viessmann` ausführen."
+            "Bitte zuerst `surp auth-viessmann` ausführen."
         )
     goe = GoeWallboxClient(settings.goe_host)
     viessmann = ViessmannClient(settings.viessmann_auth_file, invert_grid_power_sign=settings.invert_grid_power_sign)
@@ -54,7 +54,7 @@ async def _run_async(settings: Settings) -> None:
     )
 
     logger.info(
-        "piLoading startet: mode=%s dry_run=%s dashboard=http://%s:%d",
+        "SurP startet: mode=%s dry_run=%s dashboard=http://%s:%d",
         settings.mode,
         settings.dry_run,
         settings.web_host,
@@ -79,7 +79,7 @@ async def _run_async(settings: Settings) -> None:
         for task in done:
             task.result()  # re-raise if this task ended due to an exception
         if stop_task in done:
-            logger.info("SIGTERM empfangen, fahre piLoading sauber herunter ...")
+            logger.info("SIGTERM empfangen, fahre SurP sauber herunter ...")
     finally:
         control_task.cancel()
         server_task.cancel()
@@ -91,7 +91,7 @@ async def _run_async(settings: Settings) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="piloading")
+    parser = argparse.ArgumentParser(prog="surp")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("run", help="Regelschleife + Web-Dashboard starten")
     subparsers.add_parser("auth-viessmann", help="Einmalige Viessmann-OAuth-Anmeldung durchführen")
