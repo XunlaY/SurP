@@ -12,7 +12,7 @@ nur mit PV-Überschuss statt mit Netzstrom geladen wird. Läuft unverändert auf
 
 Web-Dashboard (Mock-Modus, `PILOADING_DRY_RUN=true`, unter `http://localhost:8080/`):
 
-![piLoading Dashboard](docs/screenshot.png)
+![SurP Dashboard](docs/screenshot.png)
 
 > **⚠️ Haftungsausschluss – auf eigene Gefahr**
 >
@@ -61,7 +61,7 @@ Dann `.env` anpassen. Die wichtigsten Variablen (alle mit Präfix `PILOADING_`, 
 ## Mock-Modus (Entwicklung/Test ohne Hardware)
 
 ```bash
-piloading run
+surp run
 ```
 
 Standardmäßig `PILOADING_MODE=mock`. Simuliert einen kompletten Sonnentag (Sonnenaufgang,
@@ -73,7 +73,7 @@ PV-Kurve, Batterieladung, Sonnenuntergang) beschleunigt ab. Dashboard unter
 Auf einem Rechner mit Browser (i.d.R. dem Mac, nicht dem Pi):
 
 ```bash
-piloading auth-viessmann
+surp auth-viessmann
 ```
 
 Öffnet den OAuth2/PKCE-Login-Flow: Browser-URL wird ausgegeben, nach dem Login im Browser
@@ -91,7 +91,7 @@ scp -r ~/.config/piloading pi@<pi-host>:~/.config/piloading
 ## Live-Betrieb
 
 ```bash
-PILOADING_MODE=live PILOADING_DRY_RUN=true piloading run
+PILOADING_MODE=live PILOADING_DRY_RUN=true surp run
 ```
 
 Erst mit `dry_run=true` prüfen, ob Netz-/PV-/Batteriewerte und die geloggten Entscheidungen
@@ -127,8 +127,8 @@ pytest
   Phasenwechsel gesendet, nicht in jedem Zyklus.
 - Ein Phasenwechsel toggelt physisch das Schütz und kann vermutlich go-e dazu bringen,
   kurzzeitig `car_state=COMPLETE` zu melden, obwohl das Auto weiterlädt — Ursache eines
-  realen Vorfalls, bei dem piLoading direkt nach einem 1->3-Phasenwechsel einen laufenden
-  (nicht vollen) Ladevorgang fälschlich als beendet behandelt hat. piLoading ignoriert
+  realen Vorfalls, bei dem SurP direkt nach einem 1->3-Phasenwechsel einen laufenden
+  (nicht vollen) Ladevorgang fälschlich als beendet behandelt hat. SurP ignoriert
   `COMPLETE` daher für `PILOADING_PHASE_SWITCH_SETTLE_S` (Standard 15s) nach einem eigenen
   Phasenwechsel.
 - Die Viessmann-Feature-Namen für PV-Leistung und Batterie (`photovoltaic.*`, `ess.*`) sind

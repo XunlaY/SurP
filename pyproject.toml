@@ -19,7 +19,7 @@ dev = [
 ]
 
 [project.scripts]
-piloading = "piloading.cli:main"
+surp = "piloading.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

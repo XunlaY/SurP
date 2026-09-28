@@ -9,8 +9,8 @@ user-facing setup/deployment instructions.
 pip install -e ".[dev]"     # install (src layout, editable)
 pytest                       # run the full test suite
 pytest tests/test_controller.py -q   # single file
-piloading run                # start control loop + dashboard (PILOADING_MODE=mock by default)
-piloading auth-viessmann     # one-time interactive OAuth2/PKCE login (needs a browser)
+surp run                     # start control loop + dashboard (PILOADING_MODE=mock by default)
+surp auth-viessmann          # one-time interactive OAuth2/PKCE login (needs a browser)
 ```
 
 No linter/formatter is configured yet.

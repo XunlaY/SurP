@@ -147,7 +147,7 @@ class SurplusController:
                 # immediately here is safe — no flapping risk for the sustain-time
                 # hysteresis below to guard against — though we still rate-limit via
                 # phase_switch_min_interval_s since the physical contactor is switched
-                # either way. (Real incident: piLoading stayed off for ~15 minutes
+                # either way. (Real incident: SurP stayed off for ~15 minutes
                 # despite ~2-3kW of surplus, until the process happened to be
                 # restarted, which reset self._phases to its default of 1.)
                 wants = 3 if target_power >= three_phase_on_w else 1
@@ -262,7 +262,7 @@ async def run_control_loop(
         # A psm write toggles the physical contactor, which can plausibly make go-e
         # briefly report car_state=COMPLETE while it reconnects, even though the car is
         # still plugged in and charging fine — suspected root cause of a real-world case
-        # where a 1->3-phase switch was immediately followed by piLoading treating an
+        # where a 1->3-phase switch was immediately followed by SurP treating an
         # in-progress (not full) charge as finished. Treat any COMPLETE within
         # phase_switch_settle_s of our last switch the same as a self-induced stop: don't
         # reset the session or tell go-e to stop, just keep polling as if nothing happened.

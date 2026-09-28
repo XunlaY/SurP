@@ -1,4 +1,4 @@
-# piLoading
+# SurP
 
 **🌐 English** · [Deutsch](README.de.md)
 
@@ -12,7 +12,7 @@ simulated hardware) and on a Raspberry Pi (real hardware).
 
 Web dashboard (mock mode, `PILOADING_DRY_RUN=true`, at `http://localhost:8080/`):
 
-![piLoading Dashboard](docs/screenshot.png)
+![SurP Dashboard](docs/screenshot.png)
 
 > **⚠️ Disclaimer – use at your own risk**
 >
@@ -59,7 +59,7 @@ Then adapt `.env`. The most important variables (all prefixed with `PILOADING_`,
 ## Mock mode (development/test without hardware)
 
 ```bash
-piloading run
+surp run
 ```
 
 Defaults to `PILOADING_MODE=mock`. Simulates a complete solar day (sunrise, PV curve,
@@ -70,7 +70,7 @@ battery charging, sunset) in accelerated time. Dashboard at `http://localhost:80
 On a machine with a browser (usually the Mac, not the Pi):
 
 ```bash
-piloading auth-viessmann
+surp auth-viessmann
 ```
 
 Runs the OAuth2/PKCE login flow: a browser URL is printed, and after logging in in the
@@ -88,7 +88,7 @@ scp -r ~/.config/piloading pi@<pi-host>:~/.config/piloading
 ## Live operation
 
 ```bash
-PILOADING_MODE=live PILOADING_DRY_RUN=true piloading run
+PILOADING_MODE=live PILOADING_DRY_RUN=true surp run
 ```
 
 First check with `dry_run=true` that the grid/PV/battery values and the logged decisions
@@ -123,8 +123,8 @@ pytest
   cycle.
 - A phase change physically toggles the contactor and can presumably make go-e briefly
   report `car_state=COMPLETE` even though the car is still charging — the cause of a real
-  incident in which piLoading, directly after a 1->3-phase switch, wrongly treated an
-  in-progress (not full) charge as finished. piLoading therefore ignores `COMPLETE` for
+  incident in which SurP, directly after a 1->3-phase switch, wrongly treated an
+  in-progress (not full) charge as finished. SurP therefore ignores `COMPLETE` for
   `PILOADING_PHASE_SWITCH_SETTLE_S` (default 15s) after a phase change of its own.
 - The Viessmann feature names for PV power and battery (`photovoltaic.*`, `ess.*`) are
   plausible assumptions but not officially confirmed for the VX3 — only the grid feature
