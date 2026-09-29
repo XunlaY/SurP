@@ -3,18 +3,21 @@ in-memory LatestState the control loop updates every cycle. No auth — LAN-only
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.exceptions import HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from piloading.controller import LatestState
 from piloading.history import HistoryStore
 from piloading.models import GridReading, WallboxStatus
+
+logger = logging.getLogger(__name__)
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _LOCALES_DIR = _STATIC_DIR / "locales"
@@ -77,6 +80,15 @@ def create_app(
     app = FastAPI(title="piLoading")
     current_lang = _load_current_lang(env_file)
 
+    # The dashboard HTML and locale JSON change with releases; without this the browser
+    # can serve a stale copy and hide new buttons/banners (e.g. the Stop/Continue
+    # control). Always revalidate, never store.
+    @app.middleware("http")
+    async def _no_store(request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     # Serve the locale JSON files (de.json, en.json, ...) so the dashboard can load
     # its strings over HTTP. ~/.env is gitignored, so only these JSON files ship.
     app.mount("/locales", StaticFiles(directory=_LOCALES_DIR), name="locales")
@@ -104,10 +116,32 @@ def create_app(
         return {
             "updated_at": state.updated_at.isoformat() if state.updated_at else None,
             "stale": state.stale,
+            "stopped": state.paused,
             "grid": _serialize_grid(state.grid) if state.grid else None,
             "wallbox": _serialize_wallbox(state.wallbox) if state.wallbox else None,
             "decision": asdict(state.decision) if state.decision else None,
         }
+
+    @app.post("/api/stop")
+    async def stop() -> dict[str, bool]:
+        """User-initiated Stop: pause the control loop. run_control_loop then stops
+        touching the wallbox and battery so a manual charging current set on the go-e is
+        left alone, and serves a red "stopped" banner until Continue is pressed."""
+        async with state.resume_condition:
+            state.paused = True
+            state.resume_condition.notify_all()
+        logger.info("Ladesteuerung durch Benutzer gestoppt (Stopp)")
+        return {"stopped": True}
+
+    @app.post("/api/continue")
+    async def continue_() -> dict[str, bool]:
+        """Continue: clear the Stop so run_control_loop resumes, restarting cleanly like
+        SurP did at boot (and re-attempting charging — see run_control_loop)."""
+        async with state.resume_condition:
+            state.paused = False
+            state.resume_condition.notify_all()
+        logger.info("Ladesteuerung durch Benutzer gestartet (Weiter)")
+        return {"stopped": False}
 
     @app.get("/api/history")
     async def history_endpoint(hours: float = 24.0) -> list[dict[str, Any]]:
