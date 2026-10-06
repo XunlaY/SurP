@@ -37,6 +37,22 @@
     white-space: nowrap;
   }
   #lang-btn:hover { border-color: var(--blue); }
+  .controls { display: flex; align-items: center; gap: 0.5rem; }
+  #stop-btn {
+    background: var(--card-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.4rem 1.1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #stop-btn:hover { border-color: var(--red); color: var(--red); }
+  #stop-btn.stopped { background: var(--green); color: #07140d; border-color: var(--green); }
+  #stop-btn.stopped:hover { background: var(--card-bg); color: var(--green); }
+  #stop-btn:disabled { opacity: 0.5; cursor: default; }
   #banner {
     display: none;
     background: var(--amber);
@@ -50,6 +66,15 @@
     display: none;
     background: var(--blue);
     color: #0a1120;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-weight: 600;
+  }
+  #stop-banner {
+    display: none;
+    background: var(--red);
+    color: #2b0a05;
     padding: 0.6rem 1rem;
     border-radius: 8px;
     margin-bottom: 1rem;
@@ -96,10 +121,14 @@
 <body>
   <header>
     <h1 id="title">SurP – PV-Überschussladen</h1>
-    <button id="lang-btn" type="button" title="">English</button>
+    <div class="controls">
+      <button id="stop-btn" type="button">Stop</button>
+      <button id="lang-btn" type="button" title="">English</button>
+    </div>
   </header>
   <div id="banner"></div>
   <div id="night-banner"></div>
+  <div id="stop-banner"></div>
 
   <div class="cards">
     <div class="card">
@@ -212,6 +241,12 @@ async function fetchJSON(url) {
   return res.json();
 }
 
+async function postJSON(url) {
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  return res.json();
+}
+
 function setText(id, text, cls) {
   const el = document.getElementById(id);
   el.textContent = text;
@@ -242,6 +277,21 @@ async function refreshStatus() {
     nightBanner.textContent = t("night_banner");
   } else {
     nightBanner.style.display = "none";
+  }
+
+  // Stop/Continue: a red banner signals that the control loop is paused and the user is
+  // in manual control of the charger; the header button toggles between Stop/Continue.
+  const stopBanner = document.getElementById("stop-banner");
+  const stopBtn = document.getElementById("stop-btn");
+  if (s.stopped) {
+    stopBanner.style.display = "block";
+    stopBanner.textContent = t("stop_banner");
+    stopBtn.textContent = t("continue_btn");
+    stopBtn.classList.add("stopped");
+  } else {
+    stopBanner.style.display = "none";
+    stopBtn.textContent = t("stop_btn");
+    stopBtn.classList.remove("stopped");
   }
 
   if (s.grid) {
@@ -327,6 +377,24 @@ async function refreshHistory() {
 }
 
 document.getElementById("lang-btn").addEventListener("click", switchLanguage);
+
+// Stop/Continue toggle. Reads the current state from the button label (which
+// refreshStatus keeps in sync) to decide which endpoint to hit, disables the button
+// while the request is in flight to avoid double-taps, then re-reads status.
+const stopBtn = document.getElementById("stop-btn");
+stopBtn.addEventListener("click", async () => {
+  if (stopBtn.disabled) return;
+  const endpoint = stopBtn.classList.contains("stopped") ? "/api/continue" : "/api/stop";
+  stopBtn.disabled = true;
+  try {
+    await postJSON(endpoint);
+    await refreshStatus();
+  } catch (e) {
+    // Leave the button state alone; the next poll/success will resync.
+  } finally {
+    stopBtn.disabled = false;
+  }
+});
 
 initLanguage().then(() => {
   refreshStatus();

@@ -507,3 +507,77 @@ async def test_run_control_loop_resumes_after_self_induced_stop(tmp_path):
 
     assert battery_client.read_count > 2  # kept polling Viessmann through COMPLETE
     assert any(enabled for enabled, _, _ in wallbox_client.set_charging_calls)
+
+
+async def test_run_control_loop_stops_touching_clients_while_stopped(tmp_path):
+    """A user-initiated Stop must make the loop neither read the wallbox/battery nor
+    write to the charger (the user may have set a manual current on the go-e that SurP
+    must not overwrite), and must surface a "stopped" decision."""
+    settings = make_settings(control_interval_s=0.01, goe_poll_interval_s=0.01)
+    wallbox_client = _FakeWallbox([CarState.WAIT_CAR])
+    battery_client = _FakeBattery()
+    history = HistoryStore(tmp_path / "history.db")
+    state = LatestState()
+
+    # Let the loop take a normal cycle first, then stop it.
+    state.paused = True
+    await _run_briefly(settings, battery_client, wallbox_client, history, state, timeout=0.05)
+    history.close()
+
+    # No wallbox/battery traffic happened while stopped, and no writes to the charger.
+    assert wallbox_client.read_count == 0
+    assert battery_client.read_count == 0
+    assert wallbox_client.set_charging_calls == []
+    assert state.decision.reason_key == "reason_user_stopped"
+    assert state.decision.enable_charging is False
+
+
+async def test_run_control_loop_resumes_and_keeps_charging_after_manual_stop(tmp_path):
+    """After Stop + Continue, the loop must resume like a restart WITHOUT treating the
+    go-e's COMPLETE (caused by the manual stop, indistinguishable from a full car) as a
+    permanent no-session: it keeps polling Viessmann and re-engages charging when surplus
+    returns."""
+    settings = make_settings(
+        control_interval_s=0.01, goe_poll_interval_s=0.01, start_delay_s=0.0, stop_delay_s=0.0,
+    )
+    # WAIT_CAR first (SurP is charging), then a COMPLETE simulating the manual stop's
+    # report after the user paused SurP.
+    wallbox_client = _FakeWallbox([CarState.WAIT_CAR, CarState.COMPLETE])
+    battery_client = _FakeBattery()
+    history = HistoryStore(tmp_path / "history.db")
+    state = LatestState()
+
+    async def drive():
+        # Let the loop run a couple of normal cycles.
+        sleep = 0.01
+        await asyncio.sleep(sleep)
+        # User stops...
+        async with state.resume_condition:
+            state.paused = True
+            state.resume_condition.notify_all()
+        await asyncio.sleep(sleep)
+        # ...and continues.
+        async with state.resume_condition:
+            state.paused = False
+            state.resume_condition.notify_all()
+        await asyncio.sleep(sleep * 5)
+
+    # run_control_loop never returns, so drive the scenario from a separate task and
+    # cancel the loop once the assertions' preconditions have had time to play out.
+    loop_task = asyncio.create_task(
+        run_control_loop(settings, battery_client, wallbox_client, history, state)
+    )
+    await asyncio.wait_for(drive(), timeout=1.0)
+    loop_task.cancel()
+    try:
+        await loop_task
+    except asyncio.CancelledError:
+        pass
+    history.close()
+
+    # After Continue, the loop kept polling the battery (did NOT pause as "car full")
+    # and told the wallbox to charge at least once. The first normal cycle reads the
+    # battery once; the resumed cycle must read it again rather than treating the go-e
+    # COMPLETE as a permanent no-session.
+    assert battery_client.read_count >= 2
+    assert any(enabled for enabled, _, _ in wallbox_client.set_charging_calls)

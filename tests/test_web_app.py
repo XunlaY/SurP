@@ -40,6 +40,17 @@ async def test_index_serves_dashboard_html(client):
     assert "SurP" in response.text
 
 
+async def test_static_dashboard_and_locales_are_not_cached(client):
+    """The dashboard HTML and locale JSON must not be cached, otherwise a browser can
+    keep serving a stale copy (e.g. missing a newly added Stop button/banner)."""
+    ac, _, _ = client
+    async with ac:
+        index = await ac.get("/")
+        en = await ac.get("/locales/en.json")
+    assert index.headers.get("cache-control") == "no-store"
+    assert en.headers.get("cache-control") == "no-store"
+
+
 async def test_status_before_any_data_is_all_none(client):
     ac, _, _ = client
     async with ac:
@@ -199,3 +210,61 @@ async def test_locale_files_are_served(tmp_path):
     assert de.json()["night_banner"]
     assert en.status_code == 200
     assert en.json()["night_banner"]
+
+
+async def test_status_reports_not_stopped_by_default(client):
+    ac, _, _ = client
+    async with ac:
+        response = await ac.get("/api/status")
+    assert response.json()["stopped"] is False
+
+
+async def test_stop_and_continue_endpoints_toggle_logged_state(client):
+    ac, state, _ = client
+    async with ac:
+        assert (await ac.get("/api/status")).json()["stopped"] is False
+
+        r = await ac.post("/api/stop")
+        assert r.status_code == 200
+        assert r.json() == {"stopped": True}
+        assert state.paused is True
+        assert (await ac.get("/api/status")).json()["stopped"] is True
+
+        r = await ac.post("/api/continue")
+        assert r.status_code == 200
+        assert r.json() == {"stopped": False}
+        assert state.paused is False
+        assert (await ac.get("/api/status")).json()["stopped"] is False
+
+
+async def test_stop_endpoint_is_post_only_and_logs(client, caplog):
+    """/api/stop must only accept POST (the dashboard now POSTs it) and log an INFO line
+    so a stop is visible in the terminal. A GET — what the earlier frontend bug sent —
+    must be rejected so this contract stays explicit."""
+    ac, state, _ = client
+    async with ac:
+        # GET is not allowed: reject with 405 and do NOT toggle the state.
+        r_get = await ac.get("/api/stop")
+        assert r_get.status_code == 405
+        assert state.paused is False
+
+        # The real action is a POST and it logs at INFO.
+        with caplog.at_level("INFO", logger="piloading.web.app"):
+            r = await ac.post("/api/stop")
+        assert r.status_code == 200
+        assert state.paused is True
+        assert any("gestoppt" in rec.getMessage() for rec in caplog.records)
+        await ac.post("/api/continue")
+
+
+async def test_dashboard_contains_stop_button(tmp_path):
+    env_file = tmp_path / ".env"
+    ac = _lang_client(tmp_path, env_file)
+    async with ac:
+        html = (await ac.get("/")).text
+    assert 'id="stop-btn"' in html
+    assert 'id="stop-banner"' in html
+    # The Stop/Continue toggle must POST (the endpoints are POST-only); a GET here was
+    # the original bug (405 Method Not Allowed).
+    assert "postJSON(endpoint)" in html
+    assert 'method: "POST"' in html

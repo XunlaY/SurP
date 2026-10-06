@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from piloading.clients.base import BatterySystemClient, WallboxClient
@@ -223,13 +223,22 @@ class SurplusController:
 @dataclass
 class LatestState:
     """Shared in-memory state: the control loop writes it every cycle, the web layer
-    reads it to serve /api/status. Single asyncio process, no locking needed."""
+    reads it to serve /api/status and signals Stop/Continue through it. Single asyncio
+    process, no locking needed."""
 
     grid: GridReading | None = None
     wallbox: WallboxStatus | None = None
     decision: ControlDecision | None = None
     stale: bool = False
     updated_at: datetime | None = None
+    # A user can manually pause SurP from the dashboard. While True, run_control_loop
+    # touches neither the wallbox nor the battery (a manual charging current may be set
+    # on the go-e that must not be overwritten) and instead blocks on `resume_condition`
+    # until the flag is cleared again via Continue. The web layer flips it through
+    # /api/stop and /api/continue, notifying on `resume_condition`; the control loop owns
+    # the resume semantics.
+    paused: bool = False
+    resume_condition: asyncio.Condition = field(default_factory=asyncio.Condition)
 
 
 async def run_control_loop(
@@ -241,16 +250,58 @@ async def run_control_loop(
 ) -> None:
     controller = SurplusController(settings)
     last_grid: GridReading | None = None
+    last_wallbox: WallboxStatus | None = None
     last_applied: ControlDecision | None = None
     last_successful_read_at: datetime | None = None
     # Tracks whether *we* were the ones who last told go-e to stop charging (hysteresis
-    # deficit stop, or a stale-data stop below), as opposed to the car stopping itself.
-    # go-e reports car_state=COMPLETE in both cases — indistinguishably — so without this
-    # we can't tell a real "car is full" from "we just paused it, surplus may come back".
+    # deficit stop, a stale-data stop, or a user-initiated Stop below), as opposed to the
+    # car stopping itself. go-e reports car_state=COMPLETE in all these cases —
+    # indistinguishably — so without this we can't tell a real "car is full" from "we
+    # just paused it, surplus may come back".
     charging_stopped_by_us = False
 
     while True:
         now = datetime.now()
+
+        # User-initiated Stop from the dashboard. While paused we must not touch the
+        # wallbox or battery at all — the user may have dialed in a manual charging
+        # current on the go-e that SurP must not overwrite. We just keep serving the
+        # last-known values plus an explicit "stopped" decision and block here until
+        # `paused` is cleared again via Continue.
+        if state.paused:
+            stopped_decision = ControlDecision(
+                enable_charging=False,
+                target_amps=last_applied.target_amps if last_applied else settings.min_amp,
+                target_phases=last_applied.target_phases if last_applied else 1,
+                reason=(
+                    "Vom Benutzer gestoppt – manuelle Steuerung an der Wallbox aktiv. "
+                    "Zum Fortsetzen auf Weiter klicken."
+                ),
+                reason_key="reason_user_stopped",
+                reason_vars=None,
+            )
+            state.grid = last_grid
+            state.wallbox = last_wallbox
+            state.decision = stopped_decision
+            state.stale = False
+            state.updated_at = now
+            last_applied = stopped_decision
+            # A manual stop now looks like a car-finished COMPLETE to go-e, so when we
+            # resume we must NOT treat that COMPLETE as a permanent "car is full" — treat
+            # it like a self-induced stop so SurP keeps trying to charge on Continue.
+            charging_stopped_by_us = True
+            # `asyncio.Event.wait()` returns immediately if already set, so an Event
+            # can't express "block while true" — a Condition with an explicit predicate
+            # is what actually blocks here until /api/continue flips `paused` to False.
+            async with state.resume_condition:
+                await state.resume_condition.wait_for(lambda: not state.paused)
+            # Continue pressed: resume exactly like a restart of SurP. Reset the session
+            # hysteresis (start_delay_s/stop_delay_s re-arm fresh) and keep the
+            # charging_stopped_by_us=True above, so the very next go-e COMPLETE is not
+            # mistaken for the car being full and SurP actively re-evaluates charging.
+            controller.reset_session()
+            logger.info("Ladesteuerung durch Benutzer fortgesetzt (Mainloop Fortsetzen)")
+            continue
 
         try:
             wallbox = await wallbox_client.read_status()
@@ -258,6 +309,7 @@ async def run_control_loop(
             logger.exception("Wallbox-Abfrage fehlgeschlagen, überspringe diesen Zyklus")
             await asyncio.sleep(settings.control_interval_s)
             continue
+        last_wallbox = wallbox
 
         # A psm write toggles the physical contactor, which can plausibly make go-e
         # briefly report car_state=COMPLETE while it reconnects, even though the car is
