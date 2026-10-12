@@ -132,11 +132,13 @@ pytest
   start in live mode, the complete list of discovered features is logged once; if PV/battery
   stay empty in the dashboard, search there for the actual names and adjust
   `clients/viessmann.py` accordingly.
-- The rate limits of the Viessmann API are not exactly known. While a car is connected, it
-  is queried once per `PILOADING_CONTROL_INTERVAL_S` (default 10s); if no car is connected
-  or the charge is already finished, the Viessmann query pauses completely and only go-e is
-  polled (more slowly, every `PILOADING_GOE_POLL_INTERVAL_S`, default 60s) for a newly
-  plugged-in car.
+- The rate limits of the Viessmann API are not exactly known.
+  There might be a rolling window for 120 API calls per 10 minutes.
+  Viessman mentions 1450 API Calls per day (source).
+  While a car is connected, it is queried once per `PILOADING_CONTROL_INTERVAL_S` (default 10s); 
+  if no car is connected or the charge is already finished, the Viessmann query pauses
+  completely and only go-e is polled (more slowly, every `PILOADING_GOE_POLL_INTERVAL_S`, default 60s)
+  for a newly plugged-in car.
 - **Night mode:** if a car stays plugged in without sufficient surplus (e.g. after sunset)
   for `PILOADING_NIGHT_MODE_AFTER_S` (default 600s), the control loop switches to the slower
   `PILOADING_NIGHT_MODE_POLL_INTERVAL_S` (default 600s) for *both* queries (Viessmann and
