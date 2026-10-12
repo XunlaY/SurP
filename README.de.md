@@ -137,11 +137,14 @@ pytest
   Start im Live-Modus wird einmalig die komplette Liste der gefundenen Features geloggt;
   falls PV/Batterie im Dashboard leer bleiben, dort nach den tatsächlichen Namen suchen und
   `clients/viessmann.py` entsprechend anpassen.
-- Rate-Limits der Viessmann-API sind nicht exakt bekannt. Solange ein Auto angeschlossen
-  ist, wird sie einmal pro `PILOADING_CONTROL_INTERVAL_S` (Standard 10s) abgefragt; ist
-  kein Auto angeschlossen oder der Ladevorgang bereits abgeschlossen, pausiert die
-  Viessmann-Abfrage komplett und nur go-e wird noch (langsamer, alle
-  `PILOADING_GOE_POLL_INTERVAL_S`, Standard 60s) auf ein neu angestecktes Auto abgefragt.
+- Rate-Limits der Viessmann-API sind nicht exakt bekannt.
+  Es könnte ein rollierendes Fenster von 120 API-Aufrufen pro 10 Minuten geben.
+  Viessmann erwähnt 1450 API-Aufrufe pro Tag ([Viessmann Basic
+  Pricing](https://developer.viessmann-climatesolutions.com/start/pricing.html)).
+  Solange ein Auto angeschlossen ist, wird sie einmal pro `PILOADING_CONTROL_INTERVAL_S`
+  (Standard 10s) abgefragt; ist kein Auto angeschlossen oder der Ladevorgang bereits
+  abgeschlossen, pausiert die Viessmann-Abfrage komplett und nur go-e wird noch (langsamer,
+  alle `PILOADING_GOE_POLL_INTERVAL_S`, Standard 60s) auf ein neu angestecktes Auto abgefragt.
 - **Nachtmodus:** Hält ein Auto angeschlossen aber ohne ausreichenden Überschuss (z. B. nach
   Sonnenuntergang) für `PILOADING_NIGHT_MODE_AFTER_S` (Standard 600s) an, wechselt der
   Regelkreis auf das langsamere `PILOADING_NIGHT_MODE_POLL_INTERVAL_S` (Standard 600s) für
